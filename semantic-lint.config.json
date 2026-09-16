@@ -3,14 +3,15 @@
     "firstIndex": 0,
     "nextOffset": 1,
     "valueOptionWidth": 2,
-    "expectedSourceCount": 1,
     "runtimeStartIndex": 2,
     "optionPrefix": "--",
     "thresholdFlag": "--threshold",
     "modelFlag": "--model",
     "jsonFlag": "--json",
     "dryRunFlag": "--dry-run",
-    "helpFlag": "--help"
+    "helpFlag": "--help",
+    "defaultJson": false,
+    "defaultDryRun": false
   },
   "thresholds": {
     "defaultViolation": 0.7,
@@ -33,6 +34,7 @@
     "statusColumnWidth": 6,
     "sourceFileLabel": "Source file",
     "errorMarker": "error",
+    "noChangedFiles": "No changed files to lint.",
     "reviewMarker": "review",
     "passMarker": "pass"
   },

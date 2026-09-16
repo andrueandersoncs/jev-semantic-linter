@@ -1,6 +1,7 @@
 # Semantic linter playground
 
-This playground batches English lint rules into one TypeSafe System One request.
+This playground evaluates every changed file against English lint rules, batching
+the rules into one TypeSafe System One request per file.
 Each Markdown file under `rules/` defines one rule and becomes a Noul question:
 the returned value is the probability that the source violates that rule.
 
@@ -32,8 +33,11 @@ examples. Rule files are discovered recursively through `rules/**/*.md`.
 ## Run
 
 ```bash
-bun run semantic-lint examples/insecure-handler.ts
+bun run semantic-lint
 ```
+
+The linter reads staged and unstaged paths from `git diff HEAD`, adds untracked
+non-ignored files, skips deleted files, and lints each remaining changed file.
 
 The default violation threshold is `0.7`. Probabilities at or below `0.4` pass;
 values between `0.4` and `0.7` are reported for review. Any violation or review
@@ -43,8 +47,8 @@ Useful options:
 
 ```bash
 # Inspect the exact batched request without an API call
-bun run semantic-lint examples/insecure-handler.ts --dry-run
+bun run semantic-lint --dry-run
 
 # Machine-readable output and a stricter violation threshold
-bun run semantic-lint examples/insecure-handler.ts --json --threshold 0.8
+bun run semantic-lint --json --threshold 0.8
 ```

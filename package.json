@@ -1,11 +1,11 @@
 {
   "name": "jev-playground",
-  "module": "index.ts",
+  "module": "src/index.ts",
   "type": "module",
   "private": true,
   "scripts": {
-    "lint": "bun run semantic-lint index.ts",
-    "semantic-lint": "bun run index.ts"
+    "lint": "bun run semantic-lint",
+    "semantic-lint": "bun run src/index.ts"
   },
   "devDependencies": {
     "@types/bun": "latest"
