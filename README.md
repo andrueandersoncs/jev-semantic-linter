@@ -11,6 +11,9 @@ bun install
 export TYPESAFE_API_KEY="..."
 ```
 
+Runtime policy values, rule discovery, output formatting, and exit codes live in
+`semantic-lint.config.json` rather than as unexplained literals in the linter.
+
 ## Add a rule
 
 Create a Markdown file anywhere under `rules/`:
@@ -32,8 +35,8 @@ examples. Rule files are discovered recursively through `rules/**/*.md`.
 bun run semantic-lint examples/insecure-handler.ts
 ```
 
-The default violation threshold is `0.7`. Probabilities between `0.3` and `0.7`
-are reported for review rather than silently passing. Any violation or review
+The default violation threshold is `0.7`. Probabilities at or below `0.4` pass;
+values between `0.4` and `0.7` are reported for review. Any violation or review
 result exits with status 1.
 
 Useful options:

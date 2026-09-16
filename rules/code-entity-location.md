@@ -1,0 +1,1 @@
+every code entity should be located within a file that correctly represents that code entity through its name. for example, a function `createUser()` belongs in a file named `user-service.ts` or something like that.

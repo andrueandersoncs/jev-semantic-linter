@@ -1,0 +1,50 @@
+{
+  "arguments": {
+    "firstIndex": 0,
+    "nextOffset": 1,
+    "valueOptionWidth": 2,
+    "expectedSourceCount": 1,
+    "runtimeStartIndex": 2,
+    "optionPrefix": "--",
+    "thresholdFlag": "--threshold",
+    "modelFlag": "--model",
+    "jsonFlag": "--json",
+    "dryRunFlag": "--dry-run",
+    "helpFlag": "--help"
+  },
+  "thresholds": {
+    "defaultViolation": 0.7,
+    "passMaximum": 0.4,
+    "minimumExclusive": 0.5,
+    "maximum": 1
+  },
+  "rules": {
+    "pattern": "rules/**/*.md",
+    "firstOrdinal": 1,
+    "idPrefix": "rule_",
+    "emptyLength": 0,
+    "fileLabel": "Rule file"
+  },
+  "output": {
+    "jsonIndentSpaces": 2,
+    "unknownLanguage": "unknown",
+    "probabilityScale": 100,
+    "probabilityColumnWidth": 4,
+    "statusColumnWidth": 6,
+    "sourceFileLabel": "Source file",
+    "errorMarker": "error",
+    "reviewMarker": "review",
+    "passMarker": "pass"
+  },
+  "question": {
+    "task": "Does `code.source` violate the semantic lint rule?",
+    "guidance": "Answer yes only when the exact supplied source contains a concrete violation. If no concrete violation is present, answer no; never treat uncertainty or omitted code as evidence.",
+    "violation": "At least one behavior in the code violates the rule.",
+    "compliance": "The code complies with the rule, or the rule does not apply to this code."
+  },
+  "exitCodes": {
+    "success": 0,
+    "findings": 1,
+    "runtimeError": 2
+  }
+}

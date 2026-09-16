@@ -4,6 +4,7 @@
   "type": "module",
   "private": true,
   "scripts": {
+    "lint": "bun run semantic-lint index.ts",
     "semantic-lint": "bun run index.ts"
   },
   "devDependencies": {
