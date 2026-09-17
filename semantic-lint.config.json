@@ -1,14 +1,6 @@
 {
   "arguments": {
-    "firstIndex": 0,
-    "nextOffset": 1,
-    "valueOptionWidth": 2,
     "runtimeStartIndex": 2,
-    "optionPrefix": "--",
-    "thresholdFlag": "--threshold",
-    "modelFlag": "--model",
-    "jsonFlag": "--json",
-    "dryRunFlag": "--dry-run",
     "helpFlag": "--help",
     "defaultJson": false,
     "defaultDryRun": false
@@ -29,14 +21,8 @@
   "output": {
     "jsonIndentSpaces": 2,
     "unknownLanguage": "unknown",
-    "probabilityScale": 100,
-    "probabilityColumnWidth": 4,
-    "statusColumnWidth": 6,
     "sourceFileLabel": "Source file",
-    "errorMarker": "error",
-    "noChangedFiles": "No changed files to lint.",
-    "reviewMarker": "review",
-    "passMarker": "pass"
+    "noChangedFiles": "No changed files to lint."
   },
   "question": {
     "task": "Does `code.source` violate the semantic lint rule?",

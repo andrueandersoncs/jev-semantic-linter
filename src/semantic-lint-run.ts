@@ -1,10 +1,6 @@
 import { changedFilePaths } from "./changed-file-paths";
 import { lintOutcomes } from "./semantic-lint-evaluation";
 import type { Result } from "./semantic-lint-result";
-import {
-  exitCodeFromOutcomes,
-  reportFromOutcomes,
-} from "./semantic-lint-report";
 import type {
   Configuration,
   LintOutcome,
@@ -29,7 +25,31 @@ export async function lintRunOutcome(
     return outcomes;
   }
 
-  const output = reportFromOutcomes(outcomes.value, options, config);
-  const exitCode = exitCodeFromOutcomes(outcomes.value, config);
+  const hasFindings = outcomes.value.some(
+    (outcome) => outcome.exitCode === config.exitCodes.findings,
+  );
+  const exitCode = hasFindings
+    ? config.exitCodes.findings
+    : config.exitCodes.success;
+  if (outcomes.value.length === config.rules.emptyLength) {
+    return {
+      ok: true,
+      value: { exitCode, output: config.output.noChangedFiles },
+    };
+  }
+  if (options.json || options.dryRun) {
+    const reports = outcomes.value.map(
+      (outcome): unknown => JSON.parse(outcome.output),
+    );
+    const output = JSON.stringify(
+      reports,
+      null,
+      config.output.jsonIndentSpaces,
+    );
+    return { ok: true, value: { exitCode, output } };
+  }
+  const output = outcomes.value
+    .map((outcome) => outcome.output)
+    .join("\n\n");
   return { ok: true, value: { exitCode, output } };
 }

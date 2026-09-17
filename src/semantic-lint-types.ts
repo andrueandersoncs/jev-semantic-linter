@@ -20,15 +20,7 @@ export type Options = Readonly<{
 
 export type Configuration = Readonly<{
   arguments: Readonly<{
-    firstIndex: number;
-    nextOffset: number;
-    valueOptionWidth: number;
     runtimeStartIndex: number;
-    optionPrefix: string;
-    thresholdFlag: string;
-    modelFlag: string;
-    jsonFlag: string;
-    dryRunFlag: string;
     helpFlag: string;
     defaultJson: boolean;
     defaultDryRun: boolean;
@@ -49,14 +41,8 @@ export type Configuration = Readonly<{
   output: Readonly<{
     jsonIndentSpaces: number;
     unknownLanguage: string;
-    probabilityScale: number;
-    probabilityColumnWidth: number;
-    statusColumnWidth: number;
     sourceFileLabel: string;
-    errorMarker: string;
-    reviewMarker: string;
     noChangedFiles: string;
-    passMarker: string;
   }>;
   question: Readonly<{
     task: string;

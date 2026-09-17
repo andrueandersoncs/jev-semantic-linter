@@ -5,18 +5,6 @@ import {
 } from "./semantic-lint-result";
 import type { Finding, Rule } from "./semantic-lint-types";
 
-function findingFromAnswer(
-  rule: Rule,
-  answer: NoulResponse,
-  threshold: number,
-  passMaximum: number,
-): Finding {
-  const belowThresholdStatus: Finding["status"] =
-    answer.noul <= passMaximum ? "pass" : "review";
-  const status: Finding["status"] =
-    answer.noul >= threshold ? "violation" : belowThresholdStatus;
-  return { ...rule, probability: answer.noul, status };
-}
 
 export function findingsFromAnswers(
   rules: readonly Rule[],
@@ -32,13 +20,16 @@ export function findingsFromAnswers(
         error: `TypeSafe returned no answer for ${rule.id}`,
       };
     }
-    const finding = findingFromAnswer(
-      rule,
-      answer,
-      threshold,
-      passMaximum,
-    );
-    return { ok: true, value: finding };
+    const status: Finding["status"] =
+      answer.noul >= threshold
+        ? "violation"
+        : answer.noul <= passMaximum
+          ? "pass"
+          : "review";
+    return {
+      ok: true,
+      value: { ...rule, probability: answer.noul, status },
+    };
   });
   return valuesFromResults(findingResults);
 }

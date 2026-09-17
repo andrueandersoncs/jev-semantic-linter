@@ -5,10 +5,7 @@ import {
   valuesFromResults,
 } from "./semantic-lint-result";
 import { findingsFromAnswers } from "./semantic-lint-findings";
-import {
-  exitCodeFromFindings,
-  reportFromFindings,
-} from "./semantic-lint-report";
+import { lintFindingReport } from "./semantic-lint-report";
 import {
   questionsFromRules,
   rulesFromFiles,
@@ -24,45 +21,6 @@ import type {
 } from "./semantic-lint-types";
 import { textFromFile } from "./text-from-file";
 
-async function systemOneResponse(
-  client: TypeSafeClient,
-  request: EvaluationRequest,
-): Promise<Result<EvaluationResponse>> {
-  try {
-    return { ok: true, value: await client.systemOne(request) };
-  } catch (error) {
-    return {
-      ok: false,
-      error: `TypeSafe request failed: ${errorMessage(error)}`,
-    };
-  }
-}
-
-function requestFromSource(
-  sourcePath: string,
-  options: Options,
-  source: string,
-  questions: QuestionSet,
-  config: Configuration,
-): EvaluationRequest {
-  const extensionMatch = sourcePath.match(/\.([^.]+)$/);
-  const [, extension] = extensionMatch ?? [];
-  const request: EvaluationRequest = {
-    state: {
-      code: {
-        filename: sourcePath,
-        language: extension ?? config.output.unknownLanguage,
-        source,
-      },
-    },
-    questions,
-  };
-  if (options.model === undefined) {
-    return request;
-  }
-  return { ...request, model: options.model };
-}
-
 async function lintOutcomeFromSource(
   sourcePath: string,
   options: Options,
@@ -76,13 +34,19 @@ async function lintOutcomeFromSource(
     return source;
   }
 
-  const request = requestFromSource(
-    sourcePath,
-    options,
-    source.value,
+  const extensionMatch = sourcePath.match(/\.([^.]+)$/);
+  const [, extension] = extensionMatch ?? [];
+  const request: EvaluationRequest = {
+    state: {
+      code: {
+        filename: sourcePath,
+        language: extension ?? config.output.unknownLanguage,
+        source: source.value,
+      },
+    },
     questions,
-    config,
-  );
+    ...(options.model === undefined ? {} : { model: options.model }),
+  };
   if (options.dryRun) {
     const output = JSON.stringify(
       request,
@@ -95,7 +59,13 @@ async function lintOutcomeFromSource(
     };
   }
 
-  const response = await systemOneResponse(client, request);
+  const response: Result<EvaluationResponse> = await client
+    .systemOne(request)
+    .then((value) => ({ ok: true, value }) as const)
+    .catch((error: unknown) => ({
+      ok: false,
+      error: `TypeSafe request failed: ${errorMessage(error)}`,
+    }));
   if (!response.ok) {
     return response;
   }
@@ -110,14 +80,19 @@ async function lintOutcomeFromSource(
     return findings;
   }
 
-  const output = reportFromFindings(
+  const output = lintFindingReport(
     sourcePath,
     findings.value,
     response.value,
     options,
     config,
   );
-  const exitCode = exitCodeFromFindings(findings.value, config);
+  const hasFindings = findings.value.some(
+    (finding) => finding.status !== "pass",
+  );
+  const exitCode = hasFindings
+    ? config.exitCodes.findings
+    : config.exitCodes.success;
   return { ok: true, value: { exitCode, output } };
 }
 

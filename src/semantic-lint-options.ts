@@ -1,7 +1,5 @@
-import {
-  argumentStateFromTokens,
-  type ArgumentState,
-} from "./semantic-lint-arguments";
+import { parseArgs } from "node:util";
+import { errorMessage } from "./error-message";
 import type { Result } from "./semantic-lint-result";
 import type { Configuration, Options } from "./semantic-lint-types";
 
@@ -9,53 +7,52 @@ export function optionsFromArguments(
   args: readonly string[],
   config: Configuration,
 ): Result<Options | null> {
-  const helpRequested = args.includes(config.arguments.helpFlag);
-  if (helpRequested) {
+  if (args.includes(config.arguments.helpFlag)) {
     return { ok: true, value: null };
   }
 
-  const initialState: ArgumentState = {
-    threshold: config.thresholds.defaultViolation,
-    model: undefined,
-    json: config.arguments.defaultJson,
-    dryRun: config.arguments.defaultDryRun,
-  };
-  const parsed = argumentStateFromTokens(
-    args,
-    config.arguments.firstIndex,
-    initialState,
-    config,
-  );
-  if (!parsed.ok) {
-    return parsed;
-  }
+  try {
+    const { values } = parseArgs({
+      args: [...args],
+      options: {
+        threshold: { type: "string" },
+        model: { type: "string" },
+        json: { type: "boolean" },
+        "dry-run": { type: "boolean" },
+      },
+      strict: true,
+      allowPositionals: false,
+    });
+    const threshold =
+      values.threshold === undefined
+        ? config.thresholds.defaultViolation
+        : Number(values.threshold);
+    if (!Number.isFinite(threshold)) {
+      return { ok: false, error: "Threshold must be a finite number" };
+    }
+    if (threshold <= config.thresholds.minimumExclusive) {
+      return {
+        ok: false,
+        error: `Threshold must exceed ${config.thresholds.minimumExclusive}`,
+      };
+    }
+    if (threshold > config.thresholds.maximum) {
+      return {
+        ok: false,
+        error: `Threshold must not exceed ${config.thresholds.maximum}`,
+      };
+    }
 
-
-  const threshold = parsed.value.threshold;
-  const finiteThreshold = Number.isFinite(threshold);
-  if (!finiteThreshold) {
-    return { ok: false, error: "Threshold must be a finite number" };
-  }
-  if (threshold <= config.thresholds.minimumExclusive) {
     return {
-      ok: false,
-      error: `Threshold must exceed ${config.thresholds.minimumExclusive}`,
+      ok: true,
+      value: {
+        threshold,
+        model: values.model,
+        json: values.json ?? config.arguments.defaultJson,
+        dryRun: values["dry-run"] ?? config.arguments.defaultDryRun,
+      },
     };
+  } catch (error) {
+    return { ok: false, error: errorMessage(error) };
   }
-  if (threshold > config.thresholds.maximum) {
-    return {
-      ok: false,
-      error: `Threshold must not exceed ${config.thresholds.maximum}`,
-    };
-  }
-
-  return {
-    ok: true,
-    value: {
-      threshold,
-      model: parsed.value.model,
-      json: parsed.value.json,
-      dryRun: parsed.value.dryRun,
-    },
-  };
 }
