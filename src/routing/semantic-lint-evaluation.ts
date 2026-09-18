@@ -10,7 +10,11 @@ import {
   type SemanticLintOutcome,
 } from "../semantic-lint-report";
 import { routeAndEvaluateRules, routingDryRunPlan } from "./route-rules";
-import { rulesFromFiles, type SemanticLintRule } from "../semantic-lint-rules";
+import {
+  ruleMatchesPath,
+  rulesFromFiles,
+  type SemanticLintRule,
+} from "../semantic-lint-rules";
 import type {
   SemanticLintConfiguration,
   SemanticLintOptions,
@@ -88,7 +92,10 @@ export async function evaluateSemanticLint(
   if (!loadedRules.ok) {
     return loadedRules;
   }
-  const groups = partitionRules(loadedRules.value);
+  const applicableRules = loadedRules.value.filter((rule) =>
+    input.evidence.changedPaths.some((path) => ruleMatchesPath(rule, path)),
+  );
+  const groups = partitionRules(applicableRules);
   const reports = staticReports(groups, input);
   const routed =
     input.evidence.reviewContext === undefined

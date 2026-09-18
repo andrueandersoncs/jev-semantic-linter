@@ -17,7 +17,7 @@ import type {
   SemanticLintDiffFile,
   SemanticLintDiffHunk,
 } from "../semantic-lint-evidence";
-import type { SemanticLintRule } from "../semantic-lint-rules";
+import { ruleMatchesPath, type SemanticLintRule } from "../semantic-lint-rules";
 export type SemanticLintRoutingDecision = Readonly<{
   stage: "domain" | "path" | "hunk" | "relevance";
   candidate: string;
@@ -429,10 +429,13 @@ function eligibleFiles(
   rule: SemanticLintRule,
   diffFiles: readonly SemanticLintDiffFile[],
 ): readonly SemanticLintDiffFile[] {
-  if (rule.metadata.scope !== "source") {
-    return diffFiles;
-  }
   return diffFiles.filter((file) => {
+    if (!ruleMatchesPath(rule, file.path)) {
+      return false;
+    }
+    if (rule.metadata.scope !== "source") {
+      return true;
+    }
     const domain = domainForPath(file.path);
     return domain === "source" || domain === "tests";
   });

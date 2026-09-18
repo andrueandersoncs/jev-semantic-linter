@@ -62,7 +62,8 @@ dependency-injection framework.
 
 - Git evidence includes tracked and untracked paths, then sorts and deduplicates
   them before routing.
-- Missing, unreadable, and empty rule files return typed errors.
+- Missing, unreadable, empty, and invalid rule files return typed errors. Each
+  rule declares at least one path glob in YAML frontmatter.
 - TypeSafe and architecture-check JSON is shape-checked before use.
 - `bun run check` runs formatting, static analysis, types, behavior tests, and
   the deterministic architecture check.

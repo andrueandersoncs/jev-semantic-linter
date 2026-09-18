@@ -1,3 +1,7 @@
+---
+globs:
+  - "**/*.{ts,tsx,js,jsx,mjs,cjs}"
+---
 # Keep application state immutable
 
 Do not use `let` or `var`, reassign bindings, mutate parameters, call mutating

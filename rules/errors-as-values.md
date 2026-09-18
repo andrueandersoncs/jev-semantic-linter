@@ -1,3 +1,7 @@
+---
+globs:
+  - "**/*.{ts,tsx,js,jsx,mjs,cjs}"
+---
 # Return errors as values
 
 Application functions must return typed Result values instead of throwing.

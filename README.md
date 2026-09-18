@@ -31,7 +31,8 @@ bun run semantic-lint
 The CLI:
 
 1. parses changed, untracked, and deleted files into stable diff hunks;
-2. loads `rules/**/*.md` and assigns each rule an evaluator and scope;
+2. loads `rules/**/*.md`, keeps rules whose frontmatter globs match a changed
+   path, and assigns each rule an evaluator and scope;
 3. runs exact repository checks in code;
 4. uses Choice probability distributions to retain a beam of likely domains,
    paths, and hunks;
@@ -42,6 +43,20 @@ The CLI:
 
 No semantic judgment receives the complete Git diff or repository. Large
 candidate sets are routed through bounded buckets.
+
+## Rule globs
+
+Every rule starts with glob frontmatter:
+
+```yaml
+---
+globs:
+  - "**/*.{ts,tsx}"
+---
+```
+
+The rule is skipped when no changed path matches. Routing considers only
+matching changed files.
 
 ## Review context
 

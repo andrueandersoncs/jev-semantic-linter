@@ -1,3 +1,7 @@
+---
+globs:
+  - "**/*.{ts,tsx,js,jsx,mjs,cjs}"
+---
 # Keep operational policies with their operations
 
 Keep timeout, concurrency, retry, and logging policy beside the integration or workflow that owns the operation. Do not create or apply a global retry-everything helper.

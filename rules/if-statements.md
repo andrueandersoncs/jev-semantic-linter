@@ -1,3 +1,7 @@
+---
+globs:
+  - "**/*.{ts,tsx,js,jsx,mjs,cjs}"
+---
 # Do not nest if statements
 
 Never place an `if` statement inside another `if` branch. Prefer sequential guard

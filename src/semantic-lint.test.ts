@@ -17,9 +17,17 @@ import {
 import { fail, ok, type Result } from "./result";
 import type { SemanticLintConfiguration } from "./semantic-lint-config";
 import type { SemanticLintOutcome } from "./semantic-lint-report";
-import type { SemanticLintRule } from "./semantic-lint-rules";
+import { rulesFromFiles, type SemanticLintRule } from "./semantic-lint-rules";
 
 const config = semanticLintConfig as SemanticLintConfiguration;
+
+function ruleSource(
+  definition: string,
+  globs: readonly string[] = ["**/*"],
+): string {
+  const entries = globs.map((glob) => `  - ${JSON.stringify(glob)}`).join("\n");
+  return `---\nglobs:\n${entries}\n---\n${definition}`;
+}
 
 function deterministicRule(
   rulePath: string,
@@ -30,6 +38,7 @@ function deterministicRule(
     rulePath,
     ruleTitle: rulePath,
     definition: `# ${rulePath}`,
+    globs: ["**/*"],
     metadata: {
       evaluator: "deterministic",
       scope: "repository",
@@ -159,6 +168,40 @@ test("fails when configured rules match no files", async () => {
   expect(outcome).toMatchObject({
     ok: false,
     error: { tag: "RuleFileError" },
+  });
+});
+
+test("loads rule globs and strips frontmatter", async () => {
+  const rulePath = "rules/example.md";
+  const files: SemanticLintFileAccess = {
+    findPaths: () => Promise.resolve(ok([rulePath])),
+    readText: () =>
+      Promise.resolve(
+        ok(ruleSource("# Example rule\n\nCheck TypeScript.", ["src/**/*.ts"])),
+      ),
+  };
+  const rules = await rulesFromFiles(files, config.ruleFiles);
+  expect(expectedValue(rules)?.[0]).toMatchObject({
+    rulePath,
+    ruleTitle: "Example rule",
+    definition: "# Example rule\n\nCheck TypeScript.",
+    globs: ["src/**/*.ts"],
+  });
+});
+
+test("rejects rule files without glob frontmatter", async () => {
+  const rulePath = "rules/example.md";
+  const files: SemanticLintFileAccess = {
+    findPaths: () => Promise.resolve(ok([rulePath])),
+    readText: () => Promise.resolve(ok("# Example rule\n\nCheck TypeScript.")),
+  };
+  const rules = await rulesFromFiles(files, config.ruleFiles);
+  expect(rules).toMatchObject({
+    ok: false,
+    error: {
+      tag: "RuleFileError",
+      path: rulePath,
+    },
   });
 });
 
@@ -322,7 +365,10 @@ test("maps unified diff files and line ranges", () => {
 test("Choice routing excludes unselected diff content from final judgment", async () => {
   const rulePath = "rules/function-naming.md";
   const definitions: Readonly<Record<string, string>> = {
-    [rulePath]: "# Name functions by purpose\n\nUse clear function names.",
+    [rulePath]: ruleSource(
+      "# Name functions by purpose\n\nUse clear function names.",
+      ["src/second.ts"],
+    ),
   };
   const files: SemanticLintFileAccess = {
     findPaths: () => Promise.resolve(ok([rulePath])),
@@ -406,7 +452,7 @@ test("Choice routing excludes unselected diff content from final judgment", asyn
   expect(finding?.routing?.decisions).toContainEqual({
     stage: "path",
     candidate: "file_2",
-    probability: 0.9,
+    probability: 1,
     selected: true,
   });
 });
@@ -417,7 +463,11 @@ test("source rules do not route through configuration-only changes", async () =>
     findPaths: () => Promise.resolve(ok([rulePath])),
     readText: () =>
       Promise.resolve(
-        ok("# Name functions by purpose\n\nUse clear function names."),
+        ok(
+          ruleSource(
+            "# Name functions by purpose\n\nUse clear function names.",
+          ),
+        ),
       ),
   };
   const evaluator: SemanticLintEvaluation = {
@@ -456,12 +506,19 @@ test("source rules do not route through configuration-only changes", async () =>
 
 test("dry-run separates deterministic, review, and scoped semantic work", async () => {
   const definitions: Readonly<Record<string, string>> = {
-    "rules/filenames/use-distinct-filenames.md":
+    "rules/filenames/use-distinct-filenames.md": ruleSource(
       "# Use distinct filenames\n\nFilenames should be distinct.",
+    ),
     "rules/simplicity/require-each-change-to-justify-its-complexity.md":
-      "# Require each change to justify its complexity\n\nIdentify the requirement.",
-    "rules/function-naming.md":
+      ruleSource(
+        "# Require each change to justify its complexity\n\nIdentify the requirement.",
+      ),
+    "rules/function-naming.md": ruleSource(
       "# Name functions by purpose\n\nUse clear function names.",
+    ),
+    "rules/ignored.md": ruleSource("# Ignore docs\n\nCheck docs.", [
+      "docs/**/*.md",
+    ]),
   };
   const files: SemanticLintFileAccess = {
     findPaths: () => Promise.resolve(ok(Object.keys(definitions).toSorted())),
@@ -503,6 +560,9 @@ test("dry-run separates deterministic, review, and scoped semantic work", async 
       ? report.findings.map((finding) => finding.classification)
       : [],
   ).toEqual(["violation", "insufficient_evidence"]);
+  expect(
+    plan && "kind" in plan ? plan.rules.map((rule) => rule.rulePath) : [],
+  ).toEqual(["rules/function-naming.md"]);
   expect(plan && "kind" in plan ? plan.layers : []).toEqual([
     "domain-choice",
     "path-choice",
@@ -525,7 +585,11 @@ test("semantic findings include the evaluated source span", async () => {
     findPaths: () => Promise.resolve(ok([rulePath])),
     readText: () =>
       Promise.resolve(
-        ok("# Name functions by purpose\n\nUse clear function names."),
+        ok(
+          ruleSource(
+            "# Name functions by purpose\n\nUse clear function names.",
+          ),
+        ),
       ),
   };
   const evaluator = successfulEvaluator();
@@ -568,7 +632,9 @@ test("supplied review context makes review rules evaluable", async () => {
     readText: () =>
       Promise.resolve(
         ok(
-          "# Require each change to justify its complexity\n\nIdentify the requirement.",
+          ruleSource(
+            "# Require each change to justify its complexity\n\nIdentify the requirement.",
+          ),
         ),
       ),
   };
@@ -626,7 +692,11 @@ test("a none Choice stops routing before evidence evaluation", async () => {
     findPaths: () => Promise.resolve(ok([rulePath])),
     readText: () =>
       Promise.resolve(
-        ok("# Name functions by purpose\n\nUse clear function names."),
+        ok(
+          ruleSource(
+            "# Name functions by purpose\n\nUse clear function names.",
+          ),
+        ),
       ),
   };
   const delegate = successfulEvaluator(() => "none");
@@ -670,9 +740,9 @@ test("a none Choice stops routing before evidence evaluation", async () => {
 
 test("live evaluation bounds concurrent TypeSafe requests", async () => {
   const definitions: Readonly<Record<string, string>> = {
-    "rules/first.md": "# First rule\n\nCheck the first rule.",
-    "rules/second.md": "# Second rule\n\nCheck the second rule.",
-    "rules/third.md": "# Third rule\n\nCheck the third rule.",
+    "rules/first.md": ruleSource("# First rule\n\nCheck the first rule."),
+    "rules/second.md": ruleSource("# Second rule\n\nCheck the second rule."),
+    "rules/third.md": ruleSource("# Third rule\n\nCheck the third rule."),
   };
   const files: SemanticLintFileAccess = {
     findPaths: () => Promise.resolve(ok(Object.keys(definitions))),

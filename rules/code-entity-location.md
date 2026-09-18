@@ -1,3 +1,7 @@
+---
+globs:
+  - "**/*.{ts,tsx,js,jsx,mjs,cjs}"
+---
 # Match code entities to the file name
 
 Compare the basename of `code.filename` with every substantial top-level entity

@@ -1,3 +1,7 @@
+---
+globs:
+  - "**/*.{ts,tsx,js,jsx,mjs,cjs}"
+---
 # Keep expressions shallow
 
 An expression must not nest operators or function calls more than two levels

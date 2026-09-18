@@ -1,3 +1,7 @@
+---
+globs:
+  - "**/*.{ts,tsx,js,jsx,mjs,cjs}"
+---
 # Name functions for their values
 
 Function names must identify either the value they consume, the value they

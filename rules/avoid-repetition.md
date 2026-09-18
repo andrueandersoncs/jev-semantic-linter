@@ -1,3 +1,7 @@
+---
+globs:
+  - "**/*.{ts,tsx,js,jsx,mjs,cjs}"
+---
 # Avoid repeated logic
 
 Do not duplicate the same multi-step decision, transformation, or formatting
