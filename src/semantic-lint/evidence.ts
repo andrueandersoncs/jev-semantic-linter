@@ -1,7 +1,7 @@
 import { extname } from "node:path";
+import { Effect } from "effect";
 import type { SemanticLintFileAccess } from "./runtime/files";
 import type { FileAccessError } from "./errors";
-import { ok, type Result } from "../result";
 import type { SemanticLintConfiguration } from "./config";
 export type SemanticLintSource = Readonly<{
   path: string;
@@ -238,42 +238,39 @@ type RepositoryEvidenceInput = Readonly<{
   config: SemanticLintConfiguration["evidence"];
 }>;
 
-export async function repositoryEvidence(
+export function repositoryEvidence(
   input: RepositoryEvidenceInput,
   files: SemanticLintFileAccess,
-): Promise<Result<SemanticLintRepositoryEvidence, FileAccessError>> {
-  const repositoryPathSet = new Set(input.repositoryPaths);
-  const repositoryExtensions = new Set(input.config.repositoryFileExtensions);
-  const evidencePaths = input.repositoryPaths.filter((path) =>
-    repositoryExtensions.has(extname(path)),
-  );
-  const loaded = await Promise.all(
-    evidencePaths.map(async (path) => ({
-      path,
-      source: await files.readText(path),
-    })),
-  );
-  const failure = loaded.find((item) => !item.source.ok);
-  if (failure !== undefined && !failure.source.ok) {
-    return failure.source;
-  }
-  const repositoryFiles = loaded.flatMap((item) =>
-    item.source.ok ? [sourceFromText(item.path, item.source.value)] : [],
-  );
-  const deletedPaths = input.changedPaths.filter(
-    (path) => !repositoryPathSet.has(path),
-  );
-  return ok({
-    paths: input.repositoryPaths,
-    changedPaths: input.changedPaths,
-    deletedPaths,
-    files: repositoryFiles,
-    diffFiles: diffFilesFromEvidence(
-      input.diff,
-      input.changedPaths,
+): Effect.Effect<SemanticLintRepositoryEvidence, FileAccessError> {
+  return Effect.gen(function* () {
+    const repositoryPathSet = new Set(input.repositoryPaths);
+    const repositoryExtensions = new Set(input.config.repositoryFileExtensions);
+    const evidencePaths = input.repositoryPaths.filter((path) =>
+      repositoryExtensions.has(extname(path)),
+    );
+    const repositoryFiles = yield* Effect.forEach(
+      evidencePaths,
+      (path) =>
+        Effect.map(files.readText(path), (source) =>
+          sourceFromText(path, source),
+        ),
+      { concurrency: "unbounded" },
+    );
+    const deletedPaths = input.changedPaths.filter(
+      (path) => !repositoryPathSet.has(path),
+    );
+    return {
+      paths: input.repositoryPaths,
+      changedPaths: input.changedPaths,
       deletedPaths,
-      repositoryFiles,
-      input.config,
-    ),
+      files: repositoryFiles,
+      diffFiles: diffFilesFromEvidence(
+        input.diff,
+        input.changedPaths,
+        deletedPaths,
+        repositoryFiles,
+        input.config,
+      ),
+    };
   });
 }

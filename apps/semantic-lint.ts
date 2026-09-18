@@ -1,3 +1,4 @@
+import { Effect } from "effect";
 import semanticLintConfig from "../semantic-lint.config.json";
 import { gitChanges } from "../src/semantic-lint/runtime/git-changes";
 import { semanticLintFiles } from "../src/semantic-lint/runtime/files";
@@ -17,5 +18,7 @@ if (import.meta.main) {
   const args = Bun.argv.slice(
     config.argumentDefaults.runtimeArgumentStartIndex,
   );
-  process.exit(await writeLintCommandOutput(args, config, services));
+  process.exit(
+    await Effect.runPromise(writeLintCommandOutput(args, config, services)),
+  );
 }

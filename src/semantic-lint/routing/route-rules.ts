@@ -1,11 +1,11 @@
 import type { Usage } from "@typesafe-ai/sdk";
+import { Effect } from "effect";
 import type { TypeSafeEvaluationError } from "../errors";
 import type { SemanticLintEvaluation } from "../evaluator";
 import type { SemanticLintConfiguration } from "../config";
-import { collect, ok, type Result } from "../../result";
 import { mergeRoutingUsage, type RoutingRequestContext } from "./choice";
-import { repositoryRelations, type RepositoryRelations } from "./context";
-import { routeAndEvaluateRule, type RoutedRuleResult } from "./evaluate-rule";
+import { repositoryRelations } from "./context";
+import { routeAndEvaluateRule } from "./evaluate-rule";
 import type {
   SemanticLintDiffFile,
   SemanticLintRepositoryEvidence,
@@ -56,59 +56,6 @@ type RouteRulesInput = Readonly<{
   violationProbabilityThreshold: number;
 }>;
 
-function limitEvaluationConcurrency(
-  evaluator: SemanticLintEvaluation,
-  maximumConcurrentRequests: number,
-): SemanticLintEvaluation {
-  const limit = Math.max(1, maximumConcurrentRequests);
-  let activeRequests = 0;
-  let nextWaiter = 0;
-  const waiters: (() => void)[] = [];
-
-  async function acquire(): Promise<void> {
-    if (activeRequests < limit) {
-      activeRequests += 1;
-      return;
-    }
-    await new Promise<void>((resolve) => {
-      waiters.push(resolve);
-    });
-  }
-
-  function release(): void {
-    const waiter = waiters[nextWaiter];
-    if (waiter === undefined) {
-      activeRequests -= 1;
-      return;
-    }
-    nextWaiter += 1;
-    waiter();
-  }
-
-  return {
-    async evaluate(request, requestOptions) {
-      await acquire();
-      try {
-        return await evaluator.evaluate(request, requestOptions);
-      } finally {
-        release();
-      }
-    },
-  };
-}
-
-async function evaluateRules(
-  rules: readonly SemanticLintRule[],
-  evidence: SemanticLintRepositoryEvidence,
-  relations: RepositoryRelations,
-  context: RoutingRequestContext,
-): Promise<Result<readonly RoutedRuleResult[], TypeSafeEvaluationError>> {
-  const pending = rules.map((rule) =>
-    routeAndEvaluateRule(rule, evidence, relations, context),
-  );
-  return collect(await Promise.all(pending));
-}
-
 export function routingDryRunPlan(
   rules: readonly SemanticLintRule[],
   evidence: SemanticLintRepositoryEvidence,
@@ -149,9 +96,9 @@ export function routingDryRunPlan(
   };
 }
 
-export async function routeAndEvaluateRules(
+export function routeAndEvaluateRules(
   input: RouteRulesInput,
-): Promise<Result<RoutingResult, TypeSafeEvaluationError>> {
+): Effect.Effect<RoutingResult, TypeSafeEvaluationError> {
   const {
     rules,
     evidence,
@@ -170,28 +117,30 @@ export async function routeAndEvaluateRules(
       },
     },
     ...(modelName === undefined ? {} : { modelName }),
-    evaluator: limitEvaluationConcurrency(
-      evaluator,
-      config.routing.maximumConcurrentRequests,
-    ),
+    evaluator,
     requestOptions,
   };
   const relations = repositoryRelations(evidence);
-  const results = await evaluateRules(rules, evidence, relations, context);
-  if (!results.ok) {
-    return results;
-  }
-  const fallbackModel = modelName ?? "jev-latest";
-  const usage = mergeRoutingUsage(
-    results.value.map((result) => result.usage),
-    fallbackModel,
-  );
-  return ok({
-    findings: results.value.flatMap((result) => result.findings),
-    model: usage.model,
-    usage: {
-      input_tokens: usage.inputTokens,
-      output_tokens: usage.outputTokens,
+  return Effect.map(
+    Effect.forEach(
+      rules,
+      (rule) => routeAndEvaluateRule(rule, evidence, relations, context),
+      { concurrency: Math.max(1, config.routing.maximumConcurrentRequests) },
+    ),
+    (results) => {
+      const fallbackModel = modelName ?? "jev-latest";
+      const usage = mergeRoutingUsage(
+        results.map((result) => result.usage),
+        fallbackModel,
+      );
+      return {
+        findings: results.flatMap((result) => result.findings),
+        model: usage.model,
+        usage: {
+          input_tokens: usage.inputTokens,
+          output_tokens: usage.outputTokens,
+        },
+      };
     },
-  });
+  );
 }

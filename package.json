@@ -20,6 +20,7 @@
     "typescript": "7.0.2"
   },
   "dependencies": {
-    "@typesafe-ai/sdk": "0.6.0"
+    "@typesafe-ai/sdk": "0.6.0",
+    "effect": "4.0.0-rc.115"
   }
 }

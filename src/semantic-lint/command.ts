@@ -1,8 +1,8 @@
 import { parseArgs } from "node:util";
+import { Effect } from "effect";
 import { errorMessage } from "../error-message";
-import type { InvalidArgumentsError, SemanticLintFailure } from "./errors";
+import { InvalidArgumentsError, type SemanticLintFailure } from "./errors";
 import { lintRunOutcome, type SemanticLintServices } from "./run";
-import { fail, ok, type Result } from "../result";
 import type { SemanticLintConfiguration, SemanticLintOptions } from "./config";
 import type { SemanticLintOutcome } from "./report";
 
@@ -40,63 +40,61 @@ function thresholdErrorMessage(
 function optionsFromArguments(
   args: readonly string[],
   config: SemanticLintConfiguration,
-): Result<SemanticLintOptions, InvalidArgumentsError> {
-  try {
-    const values = parseArgs({
-      args: [...args],
-      options: {
-        threshold: { type: "string" },
-        model: { type: "string" },
-        json: { type: "boolean" },
-        "dry-run": { type: "boolean" },
-        "review-context": { type: "string" },
-      },
-      strict: true,
-      allowPositionals: false,
-    }).values;
-    const violationProbabilityThreshold =
-      values.threshold === undefined
-        ? config.probabilityThresholds.defaultViolationProbabilityThreshold
-        : Number(values.threshold);
-    const thresholdError = thresholdErrorMessage(
-      violationProbabilityThreshold,
-      config,
-    );
-    if (thresholdError !== undefined) {
-      return fail({ tag: "InvalidArgumentsError", message: thresholdError });
-    }
-    return ok({
-      violationProbabilityThreshold,
-      modelName: values.model,
-      reviewContextPath: values["review-context"],
-      outputFormat:
-        values.json === true
-          ? "json"
-          : config.argumentDefaults.defaultOutputFormat,
-      mode:
-        values["dry-run"] === true
-          ? "dry-run"
-          : config.argumentDefaults.defaultMode,
-    });
-  } catch (cause) {
-    return fail({
-      tag: "InvalidArgumentsError",
-      message: errorMessage(cause),
-    });
-  }
+): Effect.Effect<SemanticLintOptions, InvalidArgumentsError> {
+  return Effect.flatMap(
+    Effect.try({
+      try: () =>
+        parseArgs({
+          args: [...args],
+          options: {
+            threshold: { type: "string" },
+            model: { type: "string" },
+            json: { type: "boolean" },
+            "dry-run": { type: "boolean" },
+            "review-context": { type: "string" },
+          },
+          strict: true,
+          allowPositionals: false,
+        }).values,
+      catch: (cause) =>
+        new InvalidArgumentsError({ message: errorMessage(cause) }),
+    }),
+    (values) => {
+      const violationProbabilityThreshold =
+        values.threshold === undefined
+          ? config.probabilityThresholds.defaultViolationProbabilityThreshold
+          : Number(values.threshold);
+      const thresholdError = thresholdErrorMessage(
+        violationProbabilityThreshold,
+        config,
+      );
+      return thresholdError === undefined
+        ? Effect.succeed({
+            violationProbabilityThreshold,
+            modelName: values.model,
+            reviewContextPath: values["review-context"],
+            outputFormat:
+              values.json === true
+                ? "json"
+                : config.argumentDefaults.defaultOutputFormat,
+            mode:
+              values["dry-run"] === true
+                ? "dry-run"
+                : config.argumentDefaults.defaultMode,
+          })
+        : Effect.fail(new InvalidArgumentsError({ message: thresholdError }));
+    },
+  );
 }
 
-/**
- * Interprets one CLI invocation. Runtime effects are limited to the supplied
- * services; expected failures return in the Result error branch.
- */
-export async function lintCommandOutcome(
+/** Interprets one CLI invocation as a lazy Effect program. */
+export function lintCommandOutcome(
   args: readonly string[],
   config: SemanticLintConfiguration,
   services: SemanticLintServices,
-): Promise<Result<SemanticLintOutcome, SemanticLintFailure>> {
+): Effect.Effect<SemanticLintOutcome, SemanticLintFailure> {
   if (args.includes(config.argumentDefaults.helpFlag)) {
-    return ok({
+    return Effect.succeed({
       processExitCode: config.processExitCodes.success,
       report: {
         format: "text",
@@ -104,6 +102,7 @@ export async function lintCommandOutcome(
       },
     });
   }
-  const options = optionsFromArguments(args, config);
-  return options.ok ? lintRunOutcome(options.value, config, services) : options;
+  return Effect.flatMap(optionsFromArguments(args, config), (options) =>
+    lintRunOutcome(options, config, services),
+  );
 }

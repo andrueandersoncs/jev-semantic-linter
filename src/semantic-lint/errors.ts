@@ -1,33 +1,34 @@
-export type GitAccessError = Readonly<{
-  tag: "GitAccessError";
-  operation: string;
-  message: string;
-  cause?: unknown;
-}>;
+import { Data } from "effect";
 
-export type FileAccessError = Readonly<{
-  tag: "FileAccessError";
-  path: string;
-  message: string;
-  cause?: unknown;
-}>;
+export class GitAccessError extends Data.TaggedError("GitAccessError")<{
+  readonly operation: string;
+  readonly message: string;
+  readonly cause?: unknown;
+}> {}
 
-export type InvalidArgumentsError = Readonly<{
-  tag: "InvalidArgumentsError";
-  message: string;
-}>;
+export class FileAccessError extends Data.TaggedError("FileAccessError")<{
+  readonly path: string;
+  readonly message: string;
+  readonly cause?: unknown;
+}> {}
 
-export type RuleFileError = Readonly<{
-  tag: "RuleFileError";
-  path: string;
-  message: string;
-}>;
+export class InvalidArgumentsError extends Data.TaggedError(
+  "InvalidArgumentsError",
+)<{
+  readonly message: string;
+}> {}
 
-export type TypeSafeEvaluationError = Readonly<{
-  tag: "TypeSafeEvaluationError";
-  message: string;
-  cause?: unknown;
-}>;
+export class RuleFileError extends Data.TaggedError("RuleFileError")<{
+  readonly path: string;
+  readonly message: string;
+}> {}
+
+export class TypeSafeEvaluationError extends Data.TaggedError(
+  "TypeSafeEvaluationError",
+)<{
+  readonly message: string;
+  readonly cause?: unknown;
+}> {}
 
 export type SemanticLintFailure =
   | GitAccessError

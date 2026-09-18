@@ -21,8 +21,8 @@ final evaluation at six evidence items.
 
 The previous CLI sent every complete changed source through every rule and had
 no request-size bound. The new stages add internal code but make request growth
-bounded, run independent rules concurrently, and replace stringly failures with
-specific results. Types live with their owning rule, evidence, routing, or
+bounded, run independent rules concurrently, and model failures in Effect's
+typed error channel. Types live with their owning rule, evidence, routing, or
 report module; there is no shared type barrel.
 
 `src/routing/` groups the four stages. `choice.ts` selects candidates,
@@ -35,13 +35,13 @@ evidence-dependent review rules. Combining them would create one module over
 Revisit if the service accepts complete repositories within an explicit bounded
 contract.
 
-## ADR 3: Return expected failures
+## ADR 3: Model operations with Effect
 
 **Status:** accepted
 
-Runtime adapters catch external exceptions and return specific tagged failures.
-Application functions propagate `Result` values. Only the CLI converts a final
-failure into console output and an exit code.
+Runtime adapters use `Effect.try` or `Effect.tryPromise` and return specific
+tagged failures. Application functions compose lazy Effects. Only executable
+and test boundaries run them.
 
 ## ADR 4: Pin one formatter and linter
 

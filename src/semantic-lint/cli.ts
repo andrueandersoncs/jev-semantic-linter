@@ -1,3 +1,4 @@
+import { Console, Effect } from "effect";
 import { lintCommandOutcome } from "./command";
 import type { SemanticLintServices } from "./run";
 import type { SemanticLintConfiguration } from "./config";
@@ -21,20 +22,23 @@ function reportText(
 }
 
 /** Writes one interpreted command result at the console boundary. */
-export async function writeLintCommandOutput(
+export function writeLintCommandOutput(
   args: readonly string[],
   config: SemanticLintConfiguration,
   services: SemanticLintServices,
-): Promise<number> {
-  const result = await lintCommandOutcome(args, config, services);
-  if (!result.ok) {
-    console.error(`semantic-lint: ${result.error.message}`);
-    return config.processExitCodes.runtimeError;
-  }
-  const text = reportText(
-    result.value.report,
-    config.outputFormat.jsonIndentSpaces,
-  );
-  console.log(text);
-  return result.value.processExitCode;
+): Effect.Effect<number> {
+  return Effect.matchEffect(lintCommandOutcome(args, config, services), {
+    onFailure: (error) =>
+      Effect.map(
+        Console.error(`semantic-lint: ${error.message}`),
+        () => config.processExitCodes.runtimeError,
+      ),
+    onSuccess: (outcome) =>
+      Effect.map(
+        Console.log(
+          reportText(outcome.report, config.outputFormat.jsonIndentSpaces),
+        ),
+        () => outcome.processExitCode,
+      ),
+  });
 }

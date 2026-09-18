@@ -4,6 +4,7 @@ import type {
   NoulResponse,
   ScoreResponse,
 } from "@typesafe-ai/sdk";
+import { Deferred, Effect } from "effect";
 import semanticLintConfig from "../../semantic-lint.config.json";
 import { truncateBytes } from "./routing/choice";
 import type { SemanticLintFileAccess } from "./runtime/files";
@@ -14,7 +15,7 @@ import {
   diffFilesFromEvidence,
   type SemanticLintRepositoryEvidence,
 } from "./evidence";
-import { fail, ok, type Result } from "../result";
+import { TypeSafeEvaluationError } from "./errors";
 import type { SemanticLintConfiguration } from "./config";
 import type { SemanticLintOutcome } from "./report";
 import { rulesFromFiles, type SemanticLintRule } from "./rules";
@@ -119,26 +120,17 @@ function successfulEvaluator(
           return [id, answer];
         }),
       );
-      return Promise.resolve(
-        ok({
-          model: "test-model",
-          answers,
-          usage: { input_tokens: 1, output_tokens: 1 },
-        }),
-      );
+      return Effect.succeed({
+        model: "test-model",
+        answers,
+        usage: { input_tokens: 1, output_tokens: 1 },
+      });
     },
   };
 }
 
 function failedEvaluation(message: string) {
-  return Promise.resolve(
-    fail({ tag: "TypeSafeEvaluationError" as const, message }),
-  );
-}
-
-function expectedValue<T>(result: Result<T, unknown>): T | undefined {
-  expect(result.ok).toBeTrue();
-  return result.ok ? result.value : undefined;
+  return Effect.fail(new TypeSafeEvaluationError({ message }));
 }
 
 function jsonDocuments(outcome: SemanticLintOutcome) {
@@ -147,41 +139,44 @@ function jsonDocuments(outcome: SemanticLintOutcome) {
 
 test("fails when configured rules match no files", async () => {
   const files: SemanticLintFileAccess = {
-    findPaths: () => Promise.resolve(ok([])),
-    readText: () => Promise.resolve(ok("")),
+    findPaths: () => Effect.succeed([]),
+    readText: () => Effect.succeed(""),
   };
-  const outcome = await evaluateSemanticLint(
-    {
-      evidence: repositoryEvidence(["src/item.ts"], {
-        "src/item.ts": "export const item = 1;",
-      }),
-      options: {
-        violationProbabilityThreshold: 0.7,
-        outputFormat: "json",
-        mode: "dry-run",
-      },
-      config,
-    },
-    files,
-    () => ok(successfulEvaluator()),
+  const error = await Effect.runPromise(
+    Effect.flip(
+      evaluateSemanticLint(
+        {
+          evidence: repositoryEvidence(["src/item.ts"], {
+            "src/item.ts": "export const item = 1;",
+          }),
+          options: {
+            violationProbabilityThreshold: 0.7,
+            outputFormat: "json",
+            mode: "dry-run",
+          },
+          config,
+        },
+        files,
+        Effect.succeed(successfulEvaluator()),
+      ),
+    ),
   );
-  expect(outcome).toMatchObject({
-    ok: false,
-    error: { tag: "RuleFileError" },
-  });
+  expect(error).toMatchObject({ _tag: "RuleFileError" });
 });
 
 test("loads rule globs and strips frontmatter", async () => {
   const rulePath = "rules/example.md";
   const files: SemanticLintFileAccess = {
-    findPaths: () => Promise.resolve(ok([rulePath])),
+    findPaths: () => Effect.succeed([rulePath]),
     readText: () =>
-      Promise.resolve(
-        ok(ruleSource("# Example rule\n\nCheck TypeScript.", ["src/**/*.ts"])),
+      Effect.succeed(
+        ruleSource("# Example rule\n\nCheck TypeScript.", ["src/**/*.ts"]),
       ),
   };
-  const rules = await rulesFromFiles(files, config.ruleFiles);
-  expect(expectedValue(rules)?.[0]).toMatchObject({
+  const rules = await Effect.runPromise(
+    rulesFromFiles(files, config.ruleFiles),
+  );
+  expect(rules[0]).toMatchObject({
     rulePath,
     ruleTitle: "Example rule",
     definition: "# Example rule\n\nCheck TypeScript.",
@@ -192,16 +187,15 @@ test("loads rule globs and strips frontmatter", async () => {
 test("rejects rule files without glob frontmatter", async () => {
   const rulePath = "rules/example.md";
   const files: SemanticLintFileAccess = {
-    findPaths: () => Promise.resolve(ok([rulePath])),
-    readText: () => Promise.resolve(ok("# Example rule\n\nCheck TypeScript.")),
+    findPaths: () => Effect.succeed([rulePath]),
+    readText: () => Effect.succeed("# Example rule\n\nCheck TypeScript."),
   };
-  const rules = await rulesFromFiles(files, config.ruleFiles);
-  expect(rules).toMatchObject({
-    ok: false,
-    error: {
-      tag: "RuleFileError",
-      path: rulePath,
-    },
+  const error = await Effect.runPromise(
+    Effect.flip(rulesFromFiles(files, config.ruleFiles)),
+  );
+  expect(error).toMatchObject({
+    _tag: "RuleFileError",
+    path: rulePath,
   });
 });
 
@@ -371,8 +365,8 @@ test("Choice routing excludes unselected diff content from final judgment", asyn
     ),
   };
   const files: SemanticLintFileAccess = {
-    findPaths: () => Promise.resolve(ok([rulePath])),
-    readText: (path) => Promise.resolve(ok(definitions[path] ?? "")),
+    findPaths: () => Effect.succeed([rulePath]),
+    readText: (path) => Effect.succeed(definitions[path] ?? ""),
   };
   const diff = [
     "diff --git a/src/first.ts b/src/first.ts",
@@ -426,24 +420,22 @@ test("Choice routing excludes unselected diff content from final judgment", asyn
       return delegate.evaluate(request, options);
     },
   };
-  const outcomes = await evaluateSemanticLint(
-    {
-      evidence,
-      options: {
-        violationProbabilityThreshold: 0.7,
-        outputFormat: "json",
-        mode: "live",
+  const outcomes = await Effect.runPromise(
+    evaluateSemanticLint(
+      {
+        evidence,
+        options: {
+          violationProbabilityThreshold: 0.7,
+          outputFormat: "json",
+          mode: "live",
+        },
+        config,
       },
-      config,
-    },
-    files,
-    () => ok(evaluator),
+      files,
+      Effect.succeed(evaluator),
+    ),
   );
-  const outcomeValues = expectedValue(outcomes);
-  if (outcomeValues === undefined) {
-    return;
-  }
-  const finding = jsonDocuments(outcomeValues).flatMap((document) =>
+  const finding = jsonDocuments(outcomes).flatMap((document) =>
     "findings" in document ? document.findings : [],
   )[0];
   expect(
@@ -460,40 +452,34 @@ test("Choice routing excludes unselected diff content from final judgment", asyn
 test("source rules do not route through configuration-only changes", async () => {
   const rulePath = "rules/function-naming.md";
   const files: SemanticLintFileAccess = {
-    findPaths: () => Promise.resolve(ok([rulePath])),
+    findPaths: () => Effect.succeed([rulePath]),
     readText: () =>
-      Promise.resolve(
-        ok(
-          ruleSource(
-            "# Name functions by purpose\n\nUse clear function names.",
-          ),
-        ),
+      Effect.succeed(
+        ruleSource("# Name functions by purpose\n\nUse clear function names."),
       ),
   };
   const evaluator: SemanticLintEvaluation = {
     evaluate: () =>
       failedEvaluation("configuration must not enter source routing"),
   };
-  const outcomes = await evaluateSemanticLint(
-    {
-      evidence: repositoryEvidence(["package.json"], {
-        "package.json": "{}",
-      }),
-      options: {
-        violationProbabilityThreshold: 0.7,
-        outputFormat: "json",
-        mode: "live",
+  const outcomes = await Effect.runPromise(
+    evaluateSemanticLint(
+      {
+        evidence: repositoryEvidence(["package.json"], {
+          "package.json": "{}",
+        }),
+        options: {
+          violationProbabilityThreshold: 0.7,
+          outputFormat: "json",
+          mode: "live",
+        },
+        config,
       },
-      config,
-    },
-    files,
-    () => ok(evaluator),
+      files,
+      Effect.succeed(evaluator),
+    ),
   );
-  const outcomeValues = expectedValue(outcomes);
-  if (outcomeValues === undefined) {
-    return;
-  }
-  const findings = jsonDocuments(outcomeValues).flatMap((document) =>
+  const findings = jsonDocuments(outcomes).flatMap((document) =>
     "findings" in document ? document.findings : [],
   );
   expect(findings).toMatchObject([
@@ -521,8 +507,8 @@ test("dry-run separates deterministic, review, and scoped semantic work", async 
     ]),
   };
   const files: SemanticLintFileAccess = {
-    findPaths: () => Promise.resolve(ok(Object.keys(definitions).toSorted())),
-    readText: (path) => Promise.resolve(ok(definitions[path] ?? "")),
+    findPaths: () => Effect.succeed(Object.keys(definitions).toSorted()),
+    readText: (path) => Effect.succeed(definitions[path] ?? ""),
   };
   const evaluator: SemanticLintEvaluation = {
     evaluate: () => failedEvaluation("dry-run must not call the evaluator"),
@@ -535,24 +521,22 @@ test("dry-run separates deterministic, review, and scoped semantic work", async 
     },
     ["src/item.ts"],
   );
-  const outcomes = await evaluateSemanticLint(
-    {
-      evidence,
-      options: {
-        violationProbabilityThreshold: 0.7,
-        outputFormat: "text",
-        mode: "dry-run",
+  const outcomes = await Effect.runPromise(
+    evaluateSemanticLint(
+      {
+        evidence,
+        options: {
+          violationProbabilityThreshold: 0.7,
+          outputFormat: "text",
+          mode: "dry-run",
+        },
+        config,
       },
-      config,
-    },
-    files,
-    () => ok(evaluator),
+      files,
+      Effect.succeed(evaluator),
+    ),
   );
-  const outcomeValues = expectedValue(outcomes);
-  if (outcomeValues === undefined) {
-    return;
-  }
-  const documents = jsonDocuments(outcomeValues);
+  const documents = jsonDocuments(outcomes);
   const report = documents.find((document) => "findings" in document);
   const plan = documents.find((document) => "kind" in document);
   expect(
@@ -582,38 +566,32 @@ test("dry-run separates deterministic, review, and scoped semantic work", async 
 test("semantic findings include the evaluated source span", async () => {
   const rulePath = "rules/function-naming.md";
   const files: SemanticLintFileAccess = {
-    findPaths: () => Promise.resolve(ok([rulePath])),
+    findPaths: () => Effect.succeed([rulePath]),
     readText: () =>
-      Promise.resolve(
-        ok(
-          ruleSource(
-            "# Name functions by purpose\n\nUse clear function names.",
-          ),
-        ),
+      Effect.succeed(
+        ruleSource("# Name functions by purpose\n\nUse clear function names."),
       ),
   };
   const evaluator = successfulEvaluator();
   const evidence = repositoryEvidence(["src/item.ts"], {
     "src/item.ts": "export function x() { return 1; }",
   });
-  const outcomes = await evaluateSemanticLint(
-    {
-      evidence,
-      options: {
-        violationProbabilityThreshold: 0.7,
-        outputFormat: "json",
-        mode: "live",
+  const outcomes = await Effect.runPromise(
+    evaluateSemanticLint(
+      {
+        evidence,
+        options: {
+          violationProbabilityThreshold: 0.7,
+          outputFormat: "json",
+          mode: "live",
+        },
+        config,
       },
-      config,
-    },
-    files,
-    () => ok(evaluator),
+      files,
+      Effect.succeed(evaluator),
+    ),
   );
-  const outcomeValues = expectedValue(outcomes);
-  if (outcomeValues === undefined) {
-    return;
-  }
-  const findings = jsonDocuments(outcomeValues).flatMap((document) =>
+  const findings = jsonDocuments(outcomes).flatMap((document) =>
     "findings" in document ? document.findings : [],
   );
   expect(findings[0]?.classification).toBe("violation");
@@ -628,13 +606,11 @@ test("supplied review context makes review rules evaluable", async () => {
   const rulePath =
     "rules/simplicity/require-each-change-to-justify-its-complexity.md";
   const files: SemanticLintFileAccess = {
-    findPaths: () => Promise.resolve(ok([rulePath])),
+    findPaths: () => Effect.succeed([rulePath]),
     readText: () =>
-      Promise.resolve(
-        ok(
-          ruleSource(
-            "# Require each change to justify its complexity\n\nIdentify the requirement.",
-          ),
+      Effect.succeed(
+        ruleSource(
+          "# Require each change to justify its complexity\n\nIdentify the requirement.",
         ),
       ),
   };
@@ -651,24 +627,22 @@ test("supplied review context makes review rules evaluable", async () => {
       source: "Requirement: expose one item value.",
     },
   };
-  const outcomes = await evaluateSemanticLint(
-    {
-      evidence,
-      options: {
-        violationProbabilityThreshold: 0.7,
-        outputFormat: "text",
-        mode: "dry-run",
+  const outcomes = await Effect.runPromise(
+    evaluateSemanticLint(
+      {
+        evidence,
+        options: {
+          violationProbabilityThreshold: 0.7,
+          outputFormat: "text",
+          mode: "dry-run",
+        },
+        config,
       },
-      config,
-    },
-    files,
-    () => ok(evaluator),
+      files,
+      Effect.succeed(evaluator),
+    ),
   );
-  const outcomeValues = expectedValue(outcomes);
-  if (outcomeValues === undefined) {
-    return;
-  }
-  const documents = jsonDocuments(outcomeValues);
+  const documents = jsonDocuments(outcomes);
   expect(documents).toHaveLength(1);
   expect(documents[0]).toMatchObject({
     kind: "dry-run-plan",
@@ -689,14 +663,10 @@ test("byte truncation preserves complete UTF-8 characters", () => {
 test("a none Choice stops routing before evidence evaluation", async () => {
   const rulePath = "rules/function-naming.md";
   const files: SemanticLintFileAccess = {
-    findPaths: () => Promise.resolve(ok([rulePath])),
+    findPaths: () => Effect.succeed([rulePath]),
     readText: () =>
-      Promise.resolve(
-        ok(
-          ruleSource(
-            "# Name functions by purpose\n\nUse clear function names.",
-          ),
-        ),
+      Effect.succeed(
+        ruleSource("# Name functions by purpose\n\nUse clear function names."),
       ),
   };
   const delegate = successfulEvaluator(() => "none");
@@ -707,31 +677,29 @@ test("a none Choice stops routing before evidence evaluation", async () => {
       return delegate.evaluate(request, options);
     },
   };
-  const outcomes = await evaluateSemanticLint(
-    {
-      evidence: repositoryEvidence(
-        ["src/first.ts", "src/second.ts"],
-        {
-          "src/first.ts": "export const first = 1;",
-          "src/second.ts": "export const second = 2;",
+  const outcomes = await Effect.runPromise(
+    evaluateSemanticLint(
+      {
+        evidence: repositoryEvidence(
+          ["src/first.ts", "src/second.ts"],
+          {
+            "src/first.ts": "export const first = 1;",
+            "src/second.ts": "export const second = 2;",
+          },
+          ["src/first.ts", "src/second.ts"],
+        ),
+        options: {
+          violationProbabilityThreshold: 0.7,
+          outputFormat: "json",
+          mode: "live",
         },
-        ["src/first.ts", "src/second.ts"],
-      ),
-      options: {
-        violationProbabilityThreshold: 0.7,
-        outputFormat: "json",
-        mode: "live",
+        config,
       },
-      config,
-    },
-    files,
-    () => ok(evaluator),
+      files,
+      Effect.succeed(evaluator),
+    ),
   );
-  const outcomeValues = expectedValue(outcomes);
-  if (outcomeValues === undefined) {
-    return;
-  }
-  const findings = jsonDocuments(outcomeValues).flatMap((document) =>
+  const findings = jsonDocuments(outcomes).flatMap((document) =>
     "findings" in document ? document.findings : [],
   );
   expect(requestCount).toBe(1);
@@ -745,37 +713,39 @@ test("live evaluation bounds concurrent TypeSafe requests", async () => {
     "rules/third.md": ruleSource("# Third rule\n\nCheck the third rule."),
   };
   const files: SemanticLintFileAccess = {
-    findPaths: () => Promise.resolve(ok(Object.keys(definitions))),
-    readText: (path) => Promise.resolve(ok(definitions[path] ?? "")),
+    findPaths: () => Effect.succeed(Object.keys(definitions)),
+    readText: (path) => Effect.succeed(definitions[path] ?? ""),
   };
   const delegate = successfulEvaluator();
   let activeRequests = 0;
   let maximumActiveRequests = 0;
   let requestCount = 0;
-  let releaseInitialRequests: () => void = () => undefined;
-  let signalInitialRequestsStarted: () => void = () => undefined;
-  const initialRequestsReleased = new Promise<void>((resolve) => {
-    releaseInitialRequests = resolve;
-  });
-  const initialRequestsStarted = new Promise<void>((resolve) => {
-    signalInitialRequestsStarted = resolve;
-  });
+  const initialRequestsReleased = Deferred.makeUnsafe<void>();
+  const initialRequestsStarted = Deferred.makeUnsafe<void>();
   const evaluator: SemanticLintEvaluation = {
-    async evaluate(request, options) {
-      activeRequests += 1;
-      requestCount += 1;
-      maximumActiveRequests = Math.max(maximumActiveRequests, activeRequests);
-      if (requestCount === 2) {
-        signalInitialRequestsStarted();
-      }
-      try {
-        if (requestCount <= 2) {
-          await initialRequestsReleased;
-        }
-        return await delegate.evaluate(request, options);
-      } finally {
-        activeRequests -= 1;
-      }
+    evaluate(request, options) {
+      return Effect.suspend(() => {
+        activeRequests += 1;
+        requestCount += 1;
+        maximumActiveRequests = Math.max(maximumActiveRequests, activeRequests);
+        const signal =
+          requestCount === 2
+            ? Deferred.succeed(initialRequestsStarted, undefined)
+            : Effect.succeed(false);
+        const wait =
+          requestCount <= 2
+            ? Deferred.await(initialRequestsReleased)
+            : Effect.succeed(undefined);
+        return Effect.ensuring(
+          Effect.andThen(
+            signal,
+            Effect.andThen(wait, delegate.evaluate(request, options)),
+          ),
+          Effect.sync(() => {
+            activeRequests -= 1;
+          }),
+        );
+      });
     },
   };
   const boundedConfig: SemanticLintConfiguration = {
@@ -785,32 +755,32 @@ test("live evaluation bounds concurrent TypeSafe requests", async () => {
       maximumConcurrentRequests: 2,
     },
   };
-  const outcomePromise = evaluateSemanticLint(
-    {
-      evidence: repositoryEvidence(
-        ["src/first.ts", "src/second.ts"],
-        {
-          "src/first.ts": "export const first = 1;",
-          "src/second.ts": "export const second = 2;",
+  const outcomePromise = Effect.runPromise(
+    evaluateSemanticLint(
+      {
+        evidence: repositoryEvidence(
+          ["src/first.ts", "src/second.ts"],
+          {
+            "src/first.ts": "export const first = 1;",
+            "src/second.ts": "export const second = 2;",
+          },
+          ["src/first.ts", "src/second.ts"],
+        ),
+        options: {
+          violationProbabilityThreshold: 0.7,
+          outputFormat: "json",
+          mode: "live",
         },
-        ["src/first.ts", "src/second.ts"],
-      ),
-      options: {
-        violationProbabilityThreshold: 0.7,
-        outputFormat: "json",
-        mode: "live",
+        config: boundedConfig,
       },
-      config: boundedConfig,
-    },
-    files,
-    () => ok(evaluator),
+      files,
+      Effect.succeed(evaluator),
+    ),
   );
-  await initialRequestsStarted;
-  await Promise.resolve();
+  await Effect.runPromise(Deferred.await(initialRequestsStarted));
   const observedMaximum = maximumActiveRequests;
-  releaseInitialRequests();
-  const outcomes = await outcomePromise;
-  expect(outcomes.ok).toBeTrue();
+  await Effect.runPromise(Deferred.succeed(initialRequestsReleased, undefined));
+  await outcomePromise;
   expect(observedMaximum).toBe(2);
   expect(maximumActiveRequests).toBe(2);
 });

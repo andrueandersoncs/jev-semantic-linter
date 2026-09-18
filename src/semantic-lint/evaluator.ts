@@ -4,8 +4,8 @@ import type {
   SystemOneRequest,
   SystemOneResult,
 } from "@typesafe-ai/sdk";
+import type { Effect } from "effect";
 import type { TypeSafeEvaluationError } from "./errors";
-import type { Result } from "../result";
 
 export type SemanticLintQuestionSet = Readonly<Record<string, Question>>;
 
@@ -21,5 +21,5 @@ export type SemanticLintEvaluation = Readonly<{
   evaluate: (
     request: SemanticLintEvaluationRequest,
     requestOptions: RequestOptions,
-  ) => Promise<Result<SemanticLintEvaluationResponse, TypeSafeEvaluationError>>;
+  ) => Effect.Effect<SemanticLintEvaluationResponse, TypeSafeEvaluationError>;
 }>;

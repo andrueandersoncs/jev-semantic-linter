@@ -3,9 +3,9 @@ import type {
   NoulResponse,
   ScoreResponse,
 } from "@typesafe-ai/sdk";
-import type { TypeSafeEvaluationError } from "../../errors";
+import { Effect } from "effect";
+import { TypeSafeEvaluationError } from "../../errors";
 import type { SemanticLintEvaluationResponse } from "../../evaluator";
-import { fail, ok, type Result } from "../../../result";
 
 type Schema<T> = Readonly<{
   accepts(value: unknown): value is T;
@@ -121,14 +121,14 @@ const typeSafeResponseSchema: Schema<SemanticLintEvaluationResponse> = {
 
 export function parseTypeSafeResponse(
   value: unknown,
-): Result<SemanticLintEvaluationResponse, TypeSafeEvaluationError> {
-  if (!typeSafeResponseSchema.accepts(value)) {
-    return fail({
-      tag: "TypeSafeEvaluationError",
-      message: "TypeSafe returned an invalid response.",
-    });
-  }
-  return ok(value);
+): Effect.Effect<SemanticLintEvaluationResponse, TypeSafeEvaluationError> {
+  return typeSafeResponseSchema.accepts(value)
+    ? Effect.succeed(value)
+    : Effect.fail(
+        new TypeSafeEvaluationError({
+          message: "TypeSafe returned an invalid response.",
+        }),
+      );
 }
 
 export function choiceResponse(value: unknown): ChoiceResponse | undefined {

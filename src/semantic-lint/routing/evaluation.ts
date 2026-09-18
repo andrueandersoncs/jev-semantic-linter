@@ -1,8 +1,8 @@
+import { Effect } from "effect";
 import type { SemanticLintFileAccess } from "../runtime/files";
 import { deterministicFindings } from "../deterministic";
 import type { SemanticLintFailure } from "../errors";
 import type { SemanticLintEvaluation } from "../evaluator";
-import { ok, type Result } from "../../result";
 import type { SemanticLintFinding } from "../findings";
 import {
   semanticLintOutcome,
@@ -76,66 +76,59 @@ function staticReports(
       ];
 }
 
-/**
- * Evaluates one repository snapshot and returns the complete user-facing outcome.
- * The evaluator factory is lazy, so dry runs perform no network setup.
- */
-export async function evaluateSemanticLint(
+/** Evaluates one repository snapshot into a complete user-facing outcome. */
+export function evaluateSemanticLint(
   input: LintInput,
   files: SemanticLintFileAccess,
-  createEvaluator: () => Result<SemanticLintEvaluation, SemanticLintFailure>,
-): Promise<Result<SemanticLintOutcome, SemanticLintFailure>> {
-  const loadedRules = await rulesFromFiles(files, input.config.ruleFiles);
-  if (!loadedRules.ok) {
-    return loadedRules;
-  }
-  const applicableRules = loadedRules.value.filter((rule) =>
-    input.evidence.changedPaths.some((path) => ruleMatchesPath(rule, path)),
-  );
-  const groups = partitionRules(applicableRules);
-  const reports = staticReports(groups, input);
-  const routed =
-    input.evidence.reviewContext === undefined
-      ? groups.semantic
-      : [...groups.semantic, ...groups.review];
-  if (input.options.mode === "dry-run") {
-    const plan = routingDryRunPlan(routed, input.evidence, input.config);
-    return ok(semanticLintOutcome(reports, plan, input.options, input.config));
-  }
-  if (routed.length === 0) {
-    return ok(
-      semanticLintOutcome(reports, undefined, input.options, input.config),
+  createEvaluator: Effect.Effect<SemanticLintEvaluation, SemanticLintFailure>,
+): Effect.Effect<SemanticLintOutcome, SemanticLintFailure> {
+  return Effect.gen(function* () {
+    const loadedRules = yield* rulesFromFiles(files, input.config.ruleFiles);
+    const applicableRules = loadedRules.filter((rule) =>
+      input.evidence.changedPaths.some((path) => ruleMatchesPath(rule, path)),
     );
-  }
-  const evaluator = createEvaluator();
-  if (!evaluator.ok) {
-    return evaluator;
-  }
-  const result = await routeAndEvaluateRules({
-    rules: routed,
-    evidence: input.evidence,
-    config: input.config,
-    modelName: input.options.modelName,
-    requestOptions: {},
-    evaluator: evaluator.value,
-    violationProbabilityThreshold: input.options.violationProbabilityThreshold,
-  });
-  if (!result.ok) {
-    return result;
-  }
-  const routedReport: SemanticLintFindingReport = {
-    source: "<routed-evidence>",
-    model: result.value.model,
-    findings: result.value.findings,
-    violationProbabilityThreshold: input.options.violationProbabilityThreshold,
-    usage: result.value.usage,
-  };
-  return ok(
-    semanticLintOutcome(
+    const groups = partitionRules(applicableRules);
+    const reports = staticReports(groups, input);
+    const routed =
+      input.evidence.reviewContext === undefined
+        ? groups.semantic
+        : [...groups.semantic, ...groups.review];
+    if (input.options.mode === "dry-run") {
+      const plan = routingDryRunPlan(routed, input.evidence, input.config);
+      return semanticLintOutcome(reports, plan, input.options, input.config);
+    }
+    if (routed.length === 0) {
+      return semanticLintOutcome(
+        reports,
+        undefined,
+        input.options,
+        input.config,
+      );
+    }
+    const evaluator = yield* createEvaluator;
+    const result = yield* routeAndEvaluateRules({
+      rules: routed,
+      evidence: input.evidence,
+      config: input.config,
+      modelName: input.options.modelName,
+      requestOptions: {},
+      evaluator,
+      violationProbabilityThreshold:
+        input.options.violationProbabilityThreshold,
+    });
+    const routedReport: SemanticLintFindingReport = {
+      source: "<routed-evidence>",
+      model: result.model,
+      findings: result.findings,
+      violationProbabilityThreshold:
+        input.options.violationProbabilityThreshold,
+      usage: result.usage,
+    };
+    return semanticLintOutcome(
       [...reports, routedReport],
       undefined,
       input.options,
       input.config,
-    ),
-  );
+    );
+  });
 }

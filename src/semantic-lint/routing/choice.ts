@@ -5,9 +5,9 @@ import {
   type Usage,
 } from "@typesafe-ai/sdk";
 import { basename, extname } from "node:path";
-import type { TypeSafeEvaluationError } from "../errors";
+import { Effect } from "effect";
+import { TypeSafeEvaluationError } from "../errors";
 import { choiceResponse } from "../runtime/typesafe/response";
-import { collect, fail, ok, type Result } from "../../result";
 import type {
   SemanticLintEvaluation,
   SemanticLintEvaluationRequest,
@@ -149,16 +149,14 @@ function choiceInstructions(
   };
 }
 
-async function askChoice<T>(
+function askChoice<T>(
   rule: SemanticLintRule,
   stage: SemanticLintRoutingDecision["stage"],
   options: readonly RouteOption<T>[],
   context: RoutingRequestContext,
-): Promise<
-  Result<
-    Readonly<{ answer?: ChoiceResponse; usage: RoutingUsage }>,
-    TypeSafeEvaluationError
-  >
+): Effect.Effect<
+  Readonly<{ answer?: ChoiceResponse; usage: RoutingUsage }>,
+  TypeSafeEvaluationError
 > {
   const descriptionBytes = Math.max(
     128,
@@ -193,26 +191,24 @@ async function askChoice<T>(
     requestBytes(request) >
     context.config.evidence.maximumEvaluationRequestBytes
   ) {
-    return ok({ usage: emptyRoutingUsage(fallbackModel) });
+    return Effect.succeed({ usage: emptyRoutingUsage(fallbackModel) });
   }
-  const response = await context.evaluator.evaluate(
-    request,
-    context.requestOptions,
+  return Effect.flatMap(
+    context.evaluator.evaluate(request, context.requestOptions),
+    (response) => {
+      const answer = choiceResponse(response.answers.route);
+      return answer === undefined
+        ? Effect.fail(
+            new TypeSafeEvaluationError({
+              message: `TypeSafe returned no Choice answer for ${rule.ruleId}`,
+            }),
+          )
+        : Effect.succeed({
+            answer,
+            usage: routingUsage(response.model, response.usage),
+          });
+    },
   );
-  if (!response.ok) {
-    return response;
-  }
-  const answer = choiceResponse(response.value.answers.route);
-  if (answer === undefined) {
-    return fail({
-      tag: "TypeSafeEvaluationError",
-      message: `TypeSafe returned no Choice answer for ${rule.ruleId}`,
-    });
-  }
-  return ok({
-    answer,
-    usage: routingUsage(response.value.model, response.value.usage),
-  });
 }
 
 function optionBuckets<T>(
@@ -231,140 +227,125 @@ function optionBuckets<T>(
   });
 }
 
-async function routeOptions<T>(
+function routeOptions<T>(
   rule: SemanticLintRule,
   stage: SemanticLintRoutingDecision["stage"],
   options: readonly RouteOption<T>[],
   context: RoutingRequestContext,
   depth = 0,
-): Promise<Result<RouteExecution<T>, TypeSafeEvaluationError>> {
-  const fallbackModel = context.modelName ?? "jev-latest";
-  if (options.length === 0) {
-    return ok({
-      selected: [],
-      decisions: [],
-      usage: emptyRoutingUsage(fallbackModel),
-    });
-  }
-  const onlyOption = options.length === 1 ? options[0] : undefined;
-  if (onlyOption !== undefined) {
-    return ok({
-      selected: [{ value: onlyOption.value, logProbability: 0, decisions: 1 }],
-      decisions: [
-        {
-          stage,
-          candidate: onlyOption.id,
-          probability: 1,
-          selected: true,
-        },
-      ],
-      usage: emptyRoutingUsage(fallbackModel),
-    });
-  }
-  const candidateLimit = context.config.routing.maximumChoiceOptions - 1;
-  if (options.length > candidateLimit) {
-    const bucketRoute = await routeOptions(
-      rule,
-      stage,
-      optionBuckets(options, candidateLimit, depth),
-      context,
-      depth + 1,
-    );
-    if (!bucketRoute.ok) {
-      return bucketRoute;
+): Effect.Effect<RouteExecution<T>, TypeSafeEvaluationError> {
+  return Effect.gen(function* () {
+    const fallbackModel = context.modelName ?? "jev-latest";
+    if (options.length === 0) {
+      return {
+        selected: [],
+        decisions: [],
+        usage: emptyRoutingUsage(fallbackModel),
+      };
     }
-    const memberRouteResults = await Promise.all(
-      bucketRoute.value.selected.map(async (selectedBucket) => {
-        const memberRoute = await routeOptions(
-          rule,
-          stage,
-          selectedBucket.value,
-          context,
-          depth + 1,
-        );
-        return memberRoute.ok
-          ? ok({
-              selected: memberRoute.value.selected.map((candidate) =>
+    const onlyOption = options.length === 1 ? options[0] : undefined;
+    if (onlyOption !== undefined) {
+      return {
+        selected: [
+          { value: onlyOption.value, logProbability: 0, decisions: 1 },
+        ],
+        decisions: [
+          {
+            stage,
+            candidate: onlyOption.id,
+            probability: 1,
+            selected: true,
+          },
+        ],
+        usage: emptyRoutingUsage(fallbackModel),
+      };
+    }
+    const candidateLimit = context.config.routing.maximumChoiceOptions - 1;
+    if (options.length > candidateLimit) {
+      const bucketRoute = yield* routeOptions(
+        rule,
+        stage,
+        optionBuckets(options, candidateLimit, depth),
+        context,
+        depth + 1,
+      );
+      const memberRoutes = yield* Effect.forEach(
+        bucketRoute.selected,
+        (selectedBucket) =>
+          Effect.map(
+            routeOptions(rule, stage, selectedBucket.value, context, depth + 1),
+            (memberRoute) => ({
+              selected: memberRoute.selected.map((candidate) =>
                 joined(selectedBucket, candidate),
               ),
-              decisions: memberRoute.value.decisions,
-              usage: memberRoute.value.usage,
-            })
-          : memberRoute;
-      }),
-    );
-    const memberRoutes = collect(memberRouteResults);
-    if (!memberRoutes.ok) {
-      return memberRoutes;
-    }
-    return ok({
-      selected: best(
-        memberRoutes.value.flatMap((route) => route.selected),
-        context.config.routing.beamWidth,
-      ),
-      decisions: [
-        ...bucketRoute.value.decisions,
-        ...memberRoutes.value.flatMap((route) => route.decisions),
-      ],
-      usage: mergeRoutingUsage(
-        [
-          bucketRoute.value.usage,
-          ...memberRoutes.value.map((route) => route.usage),
+              decisions: memberRoute.decisions,
+              usage: memberRoute.usage,
+            }),
+          ),
+        { concurrency: "unbounded" },
+      );
+      return {
+        selected: best(
+          memberRoutes.flatMap((route) => route.selected),
+          context.config.routing.beamWidth,
+        ),
+        decisions: [
+          ...bucketRoute.decisions,
+          ...memberRoutes.flatMap((route) => route.decisions),
         ],
-        fallbackModel,
-      ),
-    });
-  }
-  const choiceResult = await askChoice(rule, stage, options, context);
-  if (!choiceResult.ok) {
-    return choiceResult;
-  }
-  const { answer, usage } = choiceResult.value;
-  if (answer === undefined) {
-    return ok({ selected: [], decisions: [], usage });
-  }
-  const ranked = options
-    .map((option) => ({
-      option,
-      probability: answer.probabilities[option.id] ?? 0,
-    }))
-    .toSorted((left, right) => right.probability - left.probability);
-  const chosen =
-    answer.choice === "none"
-      ? undefined
-      : ranked.find((item) => item.option.id === answer.choice);
-  const noneProbability = answer.probabilities.none ?? 0;
-  const alternatives = ranked.filter(
-    (item) =>
-      item.option.id !== answer.choice && item.probability > noneProbability,
-  );
-  const selectedItems =
-    chosen === undefined
-      ? []
-      : [chosen, ...alternatives].slice(0, context.config.routing.beamWidth);
-  const selectedIds = new Set(selectedItems.map((item) => item.option.id));
-  const decisions: readonly SemanticLintRoutingDecision[] = [
-    ...ranked.map((item) => ({
-      stage,
-      candidate: item.option.id,
-      probability: item.probability,
-      selected: selectedIds.has(item.option.id),
-    })),
-    {
-      stage,
-      candidate: "none",
-      probability: answer.probabilities.none ?? 0,
-      selected: answer.choice === "none",
-    },
-  ];
-  return ok({
-    selected: selectedItems.map((item) => ({
-      value: item.option.value,
-      logProbability: Math.log(Math.max(item.probability, Number.EPSILON)),
-      decisions: 1,
-    })),
-    decisions,
-    usage,
+        usage: mergeRoutingUsage(
+          [bucketRoute.usage, ...memberRoutes.map((route) => route.usage)],
+          fallbackModel,
+        ),
+      };
+    }
+    const { answer, usage } = yield* askChoice(rule, stage, options, context);
+    if (answer === undefined) {
+      return { selected: [], decisions: [], usage };
+    }
+    const ranked = options
+      .map((option) => ({
+        option,
+        probability: answer.probabilities[option.id] ?? 0,
+      }))
+      .toSorted((left, right) => right.probability - left.probability);
+    const chosen =
+      answer.choice === "none"
+        ? undefined
+        : ranked.find((item) => item.option.id === answer.choice);
+    const noneProbability = answer.probabilities.none ?? 0;
+    const alternatives = ranked.filter(
+      (item) =>
+        item.option.id !== answer.choice && item.probability > noneProbability,
+    );
+    const selectedItems =
+      chosen === undefined
+        ? []
+        : [chosen, ...alternatives].slice(0, context.config.routing.beamWidth);
+    const selectedIds = new Set(selectedItems.map((item) => item.option.id));
+    const decisions: readonly SemanticLintRoutingDecision[] = [
+      ...ranked.map((item) => ({
+        stage,
+        candidate: item.option.id,
+        probability: item.probability,
+        selected: selectedIds.has(item.option.id),
+      })),
+      {
+        stage,
+        candidate: "none",
+        probability: answer.probabilities.none ?? 0,
+        selected: answer.choice === "none",
+      },
+    ];
+    return {
+      selected: selectedItems.map((item) => ({
+        value: item.option.value,
+        logProbability: Math.log(Math.max(item.probability, Number.EPSILON)),
+        decisions: 1,
+      })),
+      decisions,
+      usage,
+    };
   });
 }
 
@@ -438,103 +419,100 @@ function eligibleFiles(
   });
 }
 
-export async function routeRuleHunks(
+export function routeRuleHunks(
   rule: SemanticLintRule,
   diffFiles: readonly SemanticLintDiffFile[],
   context: RoutingRequestContext,
-): Promise<Result<RouteExecution<RoutedHunk>, TypeSafeEvaluationError>> {
-  const fallbackModel = context.modelName ?? "jev-latest";
-  const filesByDomain = Map.groupBy(eligibleFiles(rule, diffFiles), (file) =>
-    domainForPath(file.path),
-  );
-  const domainOptions = [...filesByDomain.entries()].map(([domain, files]) => ({
-    id: `domain_${domain}`,
-    description: `${evidenceDomains[domain]} Changed files: ${files.map((file) => file.path).join(", ")}`,
-    value: domain,
-  }));
-  const domainRoute = await routeOptions(
-    rule,
-    "domain",
-    domainOptions,
-    context,
-  );
-  if (!domainRoute.ok) {
-    return domainRoute;
-  }
-  const fileRouteResults = await Promise.all(
-    domainRoute.value.selected.map(async (selectedDomain) => {
-      const options = (filesByDomain.get(selectedDomain.value) ?? []).map(
-        (file) => ({
-          id: file.id,
-          description: fileDescription(file),
-          value: file,
-        }),
-      );
-      const fileRoute = await routeOptions(rule, "path", options, context);
-      return fileRoute.ok
-        ? ok({
-            selected: fileRoute.value.selected.map((file) =>
+): Effect.Effect<RouteExecution<RoutedHunk>, TypeSafeEvaluationError> {
+  return Effect.gen(function* () {
+    const fallbackModel = context.modelName ?? "jev-latest";
+    const filesByDomain = Map.groupBy(eligibleFiles(rule, diffFiles), (file) =>
+      domainForPath(file.path),
+    );
+    const domainOptions = [...filesByDomain.entries()].map(
+      ([domain, files]) => ({
+        id: `domain_${domain}`,
+        description: `${evidenceDomains[domain]} Changed files: ${files.map((file) => file.path).join(", ")}`,
+        value: domain,
+      }),
+    );
+    const domainRoute = yield* routeOptions(
+      rule,
+      "domain",
+      domainOptions,
+      context,
+    );
+    const fileRoutes = yield* Effect.forEach(
+      domainRoute.selected,
+      (selectedDomain) => {
+        const options = (filesByDomain.get(selectedDomain.value) ?? []).map(
+          (file) => ({
+            id: file.id,
+            description: fileDescription(file),
+            value: file,
+          }),
+        );
+        return Effect.map(
+          routeOptions(rule, "path", options, context),
+          (fileRoute) => ({
+            selected: fileRoute.selected.map((file) =>
               joined(selectedDomain, file),
             ),
-            decisions: fileRoute.value.decisions,
-            usage: fileRoute.value.usage,
-          })
-        : fileRoute;
-    }),
-  );
-  const fileRoutes = collect(fileRouteResults);
-  if (!fileRoutes.ok) {
-    return fileRoutes;
-  }
-  const selectedFiles = best(
-    fileRoutes.value.flatMap((route) => route.selected),
-    context.config.routing.beamWidth,
-  );
-  const hunkRouteResults = await Promise.all(
-    selectedFiles.map(async (selectedFile) => {
-      const hunks =
-        selectedFile.value.hunks.length === 0
-          ? [syntheticHunk(selectedFile.value)]
-          : selectedFile.value.hunks;
-      const options = hunks.map((hunk) => ({
-        id: hunk.id,
-        description: `${hunk.path}:${hunk.newStartLine} ${hunk.header}\n${truncateBytes(
-          hunk.patch,
-          Math.floor(context.config.routing.maximumEvidenceSnippetBytes / 3),
-        )}`,
-        value: { file: selectedFile.value, hunk },
-      }));
-      const hunkRoute = await routeOptions(rule, "hunk", options, context);
-      return hunkRoute.ok
-        ? ok({
-            selected: hunkRoute.value.selected.map((hunk) =>
+            decisions: fileRoute.decisions,
+            usage: fileRoute.usage,
+          }),
+        );
+      },
+      { concurrency: "unbounded" },
+    );
+    const selectedFiles = best(
+      fileRoutes.flatMap((route) => route.selected),
+      context.config.routing.beamWidth,
+    );
+    const hunkRoutes = yield* Effect.forEach(
+      selectedFiles,
+      (selectedFile) => {
+        const hunks =
+          selectedFile.value.hunks.length === 0
+            ? [syntheticHunk(selectedFile.value)]
+            : selectedFile.value.hunks;
+        const options = hunks.map((hunk) => ({
+          id: hunk.id,
+          description: `${hunk.path}:${hunk.newStartLine} ${hunk.header}\n${truncateBytes(
+            hunk.patch,
+            Math.floor(context.config.routing.maximumEvidenceSnippetBytes / 3),
+          )}`,
+          value: { file: selectedFile.value, hunk },
+        }));
+        return Effect.map(
+          routeOptions(rule, "hunk", options, context),
+          (hunkRoute) => ({
+            selected: hunkRoute.selected.map((hunk) =>
               joined(selectedFile, hunk),
             ),
-            decisions: hunkRoute.value.decisions,
-            usage: hunkRoute.value.usage,
-          })
-        : hunkRoute;
-    }),
-  );
-  const hunkRoutes = collect(hunkRouteResults);
-  if (!hunkRoutes.ok) {
-    return hunkRoutes;
-  }
-  const usages = [
-    domainRoute.value.usage,
-    ...fileRoutes.value.map((route) => route.usage),
-    ...hunkRoutes.value.map((route) => route.usage),
-  ];
-  return ok({
-    selected: best(
-      hunkRoutes.value.flatMap((route) => route.selected),
-      context.config.routing.beamWidth,
-    ),
-    decisions: [
-      ...domainRoute.value.decisions,
-      ...fileRoutes.value.flatMap((route) => route.decisions),
-      ...hunkRoutes.value.flatMap((route) => route.decisions),
-    ],
-    usage: mergeRoutingUsage(usages, fallbackModel),
+            decisions: hunkRoute.decisions,
+            usage: hunkRoute.usage,
+          }),
+        );
+      },
+      { concurrency: "unbounded" },
+    );
+    const usages = [
+      domainRoute.usage,
+      ...fileRoutes.map((route) => route.usage),
+      ...hunkRoutes.map((route) => route.usage),
+    ];
+    return {
+      selected: best(
+        hunkRoutes.flatMap((route) => route.selected),
+        context.config.routing.beamWidth,
+      ),
+      decisions: [
+        ...domainRoute.decisions,
+        ...fileRoutes.flatMap((route) => route.decisions),
+        ...hunkRoutes.flatMap((route) => route.decisions),
+      ],
+      usage: mergeRoutingUsage(usages, fallbackModel),
+    };
   });
 }

@@ -1,10 +1,10 @@
 import { noul, type EntryType, type Usage } from "@typesafe-ai/sdk";
+import { Effect } from "effect";
 import { noulResponse } from "../runtime/typesafe/response";
-import type { TypeSafeEvaluationError } from "../errors";
+import { TypeSafeEvaluationError } from "../errors";
 import { findingFromAnswer, type SemanticLintFinding } from "../findings";
 import type { SemanticLintEvaluationRequest } from "../evaluator";
 import { questionsFromRules } from "../rules";
-import { collect, fail, ok, type Result } from "../../result";
 import type {
   SemanticLintEvidence,
   SemanticLintRepositoryEvidence,
@@ -129,77 +129,81 @@ type RelevanceBatchResult = Readonly<{
   usage: RoutingUsage;
 }>;
 
-async function relevanceBatch(
+function relevanceBatch(
   rule: SemanticLintRule,
   batch: readonly SemanticLintEvidence[],
   context: RoutingRequestContext,
-): Promise<Result<RelevanceBatchResult, TypeSafeEvaluationError>> {
-  const response = await context.evaluator.evaluate(
-    relevanceRequest(rule, batch, context),
-    context.requestOptions,
-  );
-  if (!response.ok) {
-    return response;
-  }
-  const answers = batch.map((candidate, index) => ({
-    candidate,
-    answer: noulResponse(response.value.answers[`evidence_${index + 1}`]),
-  }));
-  if (answers.some((item) => item.answer === undefined)) {
-    return fail({
-      tag: "TypeSafeEvaluationError",
-      message: `TypeSafe returned no relevance answer for ${rule.ruleId}`,
-    });
-  }
-  return ok({
-    scores: answers.flatMap(({ candidate, answer }) =>
-      answer === undefined ? [] : [{ candidate, probability: answer.noul }],
+): Effect.Effect<RelevanceBatchResult, TypeSafeEvaluationError> {
+  return Effect.flatMap(
+    context.evaluator.evaluate(
+      relevanceRequest(rule, batch, context),
+      context.requestOptions,
     ),
-    usage: usageFromResponse(response.value.model, response.value.usage),
-  });
+    (response) => {
+      const answers = batch.map((candidate, index) => ({
+        candidate,
+        answer: noulResponse(response.answers[`evidence_${index + 1}`]),
+      }));
+      return answers.some((item) => item.answer === undefined)
+        ? Effect.fail(
+            new TypeSafeEvaluationError({
+              message: `TypeSafe returned no relevance answer for ${rule.ruleId}`,
+            }),
+          )
+        : Effect.succeed({
+            scores: answers.flatMap(({ candidate, answer }) =>
+              answer === undefined
+                ? []
+                : [{ candidate, probability: answer.noul }],
+            ),
+            usage: usageFromResponse(response.model, response.usage),
+          });
+    },
+  );
 }
 
-async function selectRelevantEvidence(
+function selectRelevantEvidence(
   rule: SemanticLintRule,
   candidates: readonly SemanticLintEvidence[],
   context: RoutingRequestContext,
-): Promise<Result<RelevanceResult, TypeSafeEvaluationError>> {
+): Effect.Effect<RelevanceResult, TypeSafeEvaluationError> {
   const fallbackModel = context.modelName ?? "jev-latest";
-  const batchResults = await Promise.all(
-    candidateBatches(rule, candidates, context).map((batch) =>
-      relevanceBatch(rule, batch, context),
+  return Effect.map(
+    Effect.forEach(
+      candidateBatches(rule, candidates, context),
+      (batch) => relevanceBatch(rule, batch, context),
+      { concurrency: "unbounded" },
     ),
+    (results) => {
+      const ranked = results
+        .flatMap((result) => result.scores)
+        .toSorted((left, right) => right.probability - left.probability);
+      const selected = ranked
+        .filter(
+          (item) =>
+            item.probability >=
+            context.config.routing.minimumRelevanceProbability,
+        )
+        .slice(0, context.config.routing.maximumSelectedEvidence);
+      const selectedIds = new Set(selected.map((item) => item.candidate.id));
+      return {
+        evidence: selected.map((item) => ({
+          ...item.candidate,
+          relevanceProbability: item.probability,
+        })),
+        decisions: ranked.map((item) => ({
+          stage: "relevance" as const,
+          candidate: item.candidate.id ?? item.candidate.path,
+          probability: item.probability,
+          selected: selectedIds.has(item.candidate.id),
+        })),
+        usage: mergeRoutingUsage(
+          results.map((result) => result.usage),
+          fallbackModel,
+        ),
+      };
+    },
   );
-  const results = collect(batchResults);
-  if (!results.ok) {
-    return results;
-  }
-  const ranked = results.value
-    .flatMap((result) => result.scores)
-    .toSorted((left, right) => right.probability - left.probability);
-  const selected = ranked
-    .filter(
-      (item) =>
-        item.probability >= context.config.routing.minimumRelevanceProbability,
-    )
-    .slice(0, context.config.routing.maximumSelectedEvidence);
-  const selectedIds = new Set(selected.map((item) => item.candidate.id));
-  return ok({
-    evidence: selected.map((item) => ({
-      ...item.candidate,
-      relevanceProbability: item.probability,
-    })),
-    decisions: ranked.map((item) => ({
-      stage: "relevance",
-      candidate: item.candidate.id ?? item.candidate.path,
-      probability: item.probability,
-      selected: selectedIds.has(item.candidate.id),
-    })),
-    usage: mergeRoutingUsage(
-      results.value.map((result) => result.usage),
-      fallbackModel,
-    ),
-  });
 }
 
 function unavailableFinding(
@@ -257,97 +261,94 @@ function fitFinalEvidence(
   return matchingLength === undefined ? [] : evidence.slice(0, matchingLength);
 }
 
-export async function routeAndEvaluateRule(
+export function routeAndEvaluateRule(
   rule: SemanticLintRule,
   evidence: SemanticLintRepositoryEvidence,
   relations: RepositoryRelations,
   context: RoutingRequestContext,
-): Promise<Result<RoutedRuleResult, TypeSafeEvaluationError>> {
-  const fallbackModel = context.modelName ?? "jev-latest";
-  const evaluator =
-    rule.metadata.evaluator === "review" ? "review" : "semantic";
-  const route = await routeRuleHunks(rule, evidence.diffFiles, context);
-  if (!route.ok) {
-    return route;
-  }
-  const expanded = expandEvidence(
-    rule,
-    route.value.selected.map((selected) => selected.value),
-    evidence,
-    context.config,
-    relations,
-  );
-  const relevance =
-    route.value.selected.length === 0
-      ? ok({
-          evidence: [],
-          decisions: [],
-          usage: emptyRoutingUsage(fallbackModel),
-        })
-      : await selectRelevantEvidence(rule, expanded, context);
-  if (!relevance.ok) {
-    return relevance;
-  }
-  const selected = fitFinalEvidence(rule, relevance.value.evidence, context);
-  const decisions = [...route.value.decisions, ...relevance.value.decisions];
-  const preliminaryUsage = mergeRoutingUsage(
-    [route.value.usage, relevance.value.usage],
-    fallbackModel,
-  );
-  if (selected.length === 0) {
-    const classification =
-      rule.metadata.scope === "source"
-        ? ("not_applicable" as const)
-        : ("insufficient_evidence" as const);
-    const message =
-      classification === "not_applicable"
-        ? "No changed evidence candidate applies to this source-scoped rule."
-        : "Layered routing found no sufficiently relevant bounded evidence.";
-    return ok({
-      findings: [
-        unavailableFinding(rule, evaluator, classification, message, decisions),
-      ],
-      usage: preliminaryUsage,
-    });
-  }
-  const response = await context.evaluator.evaluate(
-    finalRequest(rule, selected, context),
-    context.requestOptions,
-  );
-  if (!response.ok) {
-    return response;
-  }
-  const answer = noulResponse(response.value.answers[rule.ruleId]);
-  if (answer === undefined) {
-    return fail({
-      tag: "TypeSafeEvaluationError",
-      message: `TypeSafe returned no rule answer for ${rule.ruleId}`,
-    });
-  }
-  const finding = findingFromAnswer(
-    rule,
-    answer,
-    selected,
-    context.config.probabilityThresholds.defaultViolationProbabilityThreshold,
-    context.config.probabilityThresholds.maximumPassProbability,
-  );
-  const finalUsage = usageFromResponse(
-    response.value.model,
-    response.value.usage,
-  );
-  return ok({
-    findings: [
-      {
-        ...finding,
-        evaluator,
-        routing: {
-          decisions,
-          selectedEvidenceIds: selected.flatMap((item) =>
-            item.id === undefined ? [] : [item.id],
+): Effect.Effect<RoutedRuleResult, TypeSafeEvaluationError> {
+  return Effect.gen(function* () {
+    const fallbackModel = context.modelName ?? "jev-latest";
+    const evaluator =
+      rule.metadata.evaluator === "review" ? "review" : "semantic";
+    const route = yield* routeRuleHunks(rule, evidence.diffFiles, context);
+    const expanded = expandEvidence(
+      rule,
+      route.selected.map((selected) => selected.value),
+      evidence,
+      context.config,
+      relations,
+    );
+    const relevance =
+      route.selected.length === 0
+        ? {
+            evidence: [],
+            decisions: [],
+            usage: emptyRoutingUsage(fallbackModel),
+          }
+        : yield* selectRelevantEvidence(rule, expanded, context);
+    const selected = fitFinalEvidence(rule, relevance.evidence, context);
+    const decisions = [...route.decisions, ...relevance.decisions];
+    const preliminaryUsage = mergeRoutingUsage(
+      [route.usage, relevance.usage],
+      fallbackModel,
+    );
+    if (selected.length === 0) {
+      const classification =
+        rule.metadata.scope === "source"
+          ? ("not_applicable" as const)
+          : ("insufficient_evidence" as const);
+      const message =
+        classification === "not_applicable"
+          ? "No changed evidence candidate applies to this source-scoped rule."
+          : "Layered routing found no sufficiently relevant bounded evidence.";
+      return {
+        findings: [
+          unavailableFinding(
+            rule,
+            evaluator,
+            classification,
+            message,
+            decisions,
           ),
+        ],
+        usage: preliminaryUsage,
+      };
+    }
+    const response = yield* context.evaluator.evaluate(
+      finalRequest(rule, selected, context),
+      context.requestOptions,
+    );
+    const answer = noulResponse(response.answers[rule.ruleId]);
+    if (answer === undefined) {
+      return yield* Effect.fail(
+        new TypeSafeEvaluationError({
+          message: `TypeSafe returned no rule answer for ${rule.ruleId}`,
+        }),
+      );
+    }
+    const finding = findingFromAnswer(
+      rule,
+      answer,
+      selected,
+      context.config.probabilityThresholds.defaultViolationProbabilityThreshold,
+      context.config.probabilityThresholds.maximumPassProbability,
+    );
+    const finalUsage = usageFromResponse(response.model, response.usage);
+    return {
+      findings: [
+        {
+          ...finding,
+          evaluator,
+          routing: {
+            decisions,
+            selectedEvidenceIds: selected.flatMap((item) =>
+              item.id === undefined ? [] : [item.id],
+            ),
+          },
         },
-      },
-    ],
-    usage: mergeRoutingUsage([preliminaryUsage, finalUsage], fallbackModel),
+      ],
+      usage: mergeRoutingUsage([preliminaryUsage, finalUsage], fallbackModel),
+    };
   });
 }
