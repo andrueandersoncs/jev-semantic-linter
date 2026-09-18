@@ -4,6 +4,6 @@ globs:
 ---
 # Keep operational policies with their operations
 
-Keep timeout, concurrency, retry, and logging policy beside the integration or workflow that owns the operation. Do not create or apply a global retry-everything helper.
+Keep timeout, concurrency, retry selection, and logging policy beside the integration or workflow that owns the operation. Do not hide operational policy in a global retry-everything helper or unrelated configuration.
 
-Code that retries an external state-changing operation must explicitly state why repeated execution is idempotent or otherwise safe.
+Report only when changed code separates an operation from the policy that controls its execution or applies one policy indiscriminately to operations with different failure and resource contracts.
