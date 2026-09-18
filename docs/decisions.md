@@ -20,17 +20,16 @@ each request at 32,000 bytes, each evidence snippet at 6,000 bytes, and each
 final evaluation at six evidence items.
 
 The previous CLI sent every complete changed source through every rule and had
-no request-size bound. The new stages add internal code but make request growth
-bounded, run independent rules concurrently, and model failures in Effect's
-typed error channel. Types live with their owning rule, evidence, routing, or
-report module; there is no shared type barrel.
+no request-size bound. The routing stages bound request growth. A scheduler
+groups pending judgments by model, request options, and byte-identical state,
+then sends their questions together up to the configured byte limit. A shared
+semaphore bounds physical requests. Each answer returns to its originating rule,
+and distributed usage values sum to the service response totals.
 
-`src/routing/` groups the four stages. `choice.ts` selects candidates,
+`src/semantic-lint/routing/` owns the stages. `choice.ts` selects candidates,
 `context.ts` expands repository relations, `evaluate-rule.ts` evaluates one
-rule, `route-rules.ts` runs independent rules concurrently, and
-`semantic-lint-evaluation.ts` combines routed, deterministic, and
-evidence-dependent review rules. Combining them would create one module over
-1,000 lines; splitting another stage would not create a useful concept.
+rule, `batch.ts` packs shared-state questions, and `route-rules.ts` runs rule
+pipelines concurrently.
 
 Revisit if the service accepts complete repositories within an explicit bounded
 contract.
@@ -58,3 +57,11 @@ only added tool dependency. One pinned binary enforces both checks in
 TypeSafe and subprocess JSON enter as `unknown`. Small local schemas validate
 the exact fields and probability ranges consumed by the application. This keeps
 runtime validation without adding a general schema dependency.
+
+## ADR 6: Keep user rules declarative
+
+**Status:** accepted
+
+Built-in and user-defined rules use the same Markdown format under `rules/`.
+The CLI discovers them recursively. A rule needs YAML path globs and a Markdown
+definition; no registration file or executable plugin API is required.

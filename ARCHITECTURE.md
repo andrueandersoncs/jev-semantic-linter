@@ -32,6 +32,8 @@ Relative import cycles and cross-workspace internal imports are prohibited.
 - Git commands occur only through `runtime/git-changes.ts`.
 - Rule evaluation receives bounded evidence. It never receives the complete raw
   Git diff or repository.
+- Independent TypeSafe judgments with byte-identical state are packed into one
+  bounded request and their answers are mapped back to the requesting rules.
 
 ## Commands
 
@@ -62,8 +64,9 @@ dependency-injection framework.
 
 - Git evidence includes tracked and untracked paths, then sorts and deduplicates
   them before routing.
-- Missing, unreadable, empty, and invalid rule files return typed errors. Each
-  rule declares at least one path glob in YAML frontmatter.
+- Missing, unreadable, empty, and invalid Markdown rule files return typed
+  errors. Each Markdown rule declares at least one path glob in YAML
+  frontmatter.
 - TypeSafe and architecture-check JSON is shape-checked before use.
 - `bun run check` runs formatting, static analysis, types, behavior tests, and
   the deterministic architecture check.
@@ -76,7 +79,7 @@ dependency-injection framework.
 | `apps/semantic-lint.ts` | Andrue Anderson | Deployable semantic lint CLI | `semantic-lint` command | Developers and CI | Bun 1.4.2, Git, TypeSafe |
 | `src/runtime/` | Andrue Anderson | External I/O adapters | Capability interfaces | CLI composition root | Bun 1.4.2 |
 | `src/routing/` | Andrue Anderson | Bounded evidence selection and evaluation | `routeAndEvaluateRules` | Evaluation orchestrator | Bun 1.4.2 and TypeSafe |
-| `rules/` | Andrue Anderson | Engineering policy | Markdown rule files | Semantic lint evaluator | Filesystem |
+| `rules/` | Andrue Anderson | Built-in and user-defined engineering policy | Markdown rule files | Semantic lint evaluator | Filesystem |
 
 There are no architectural exceptions. A future exception must be recorded here
 with its reason, owner, and removal condition before the violating code merges.

@@ -58,6 +58,24 @@ globs:
 The rule is skipped when no changed path matches. Routing considers only
 matching changed files.
 
+## Custom rules
+
+Add a Markdown file anywhere under `rules/`. No registration is required.
+
+```md
+---
+globs:
+  - "src/**/*.ts"
+---
+# Do not commit debugger statements
+
+Remove debugger statements.
+```
+
+The YAML frontmatter selects changed paths. The Markdown body defines the rule
+for the semantic evaluator. Empty files, invalid frontmatter, missing globs, and
+invalid globs stop the run with exit code `2`.
+
 ## Review context
 
 Some rules cannot be verified from source and Git alone. Without external
@@ -133,6 +151,7 @@ Dry runs always exit successfully.
 - source and repository extensions;
 - source chunk size and overlap;
 - the maximum serialized TypeSafe request size;
+- the maximum concurrent TypeSafe requests;
 - Choice option count and beam width;
 - expansion, relevance, and final-evidence limits;
 - rule discovery;
@@ -143,6 +162,11 @@ Every generated request is checked against the configured byte limit. Oversized
 candidate sets are split or routed through another Choice layer. If no bounded,
 relevant evidence remains, the rule returns `insufficient_evidence` instead of
 a false pass or API error.
+
+Independent judgments with the same model, request options, and byte-identical
+state are sent as questions in one TypeSafe request. The scheduler splits
+batches at the byte limit, maps each answer back to its rule, and enforces the
+configured concurrent-request limit.
 
 ## Exit codes
 

@@ -3,6 +3,7 @@ import { Effect } from "effect";
 import type { TypeSafeEvaluationError } from "../errors";
 import type { SemanticLintEvaluation } from "../evaluator";
 import type { SemanticLintConfiguration } from "../config";
+import { batchedSemanticLintEvaluation } from "./batch";
 import { mergeRoutingUsage, type RoutingRequestContext } from "./choice";
 import { repositoryRelations } from "./context";
 import { routeAndEvaluateRule } from "./evaluate-rule";
@@ -108,6 +109,11 @@ export function routeAndEvaluateRules(
     evaluator,
     violationProbabilityThreshold,
   } = input;
+  const batchedEvaluator = batchedSemanticLintEvaluation(
+    evaluator,
+    config.evidence.maximumEvaluationRequestBytes,
+    config.routing.maximumConcurrentRequests,
+  );
   const context: RoutingRequestContext = {
     config: {
       ...config,
@@ -117,7 +123,7 @@ export function routeAndEvaluateRules(
       },
     },
     ...(modelName === undefined ? {} : { modelName }),
-    evaluator,
+    evaluator: batchedEvaluator,
     requestOptions,
   };
   const relations = repositoryRelations(evidence);
@@ -125,7 +131,7 @@ export function routeAndEvaluateRules(
     Effect.forEach(
       rules,
       (rule) => routeAndEvaluateRule(rule, evidence, relations, context),
-      { concurrency: Math.max(1, config.routing.maximumConcurrentRequests) },
+      { concurrency: "unbounded" },
     ),
     (results) => {
       const fallbackModel = modelName ?? "jev-latest";

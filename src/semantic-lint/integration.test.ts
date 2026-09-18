@@ -4,13 +4,16 @@ import type {
   NoulResponse,
   ScoreResponse,
 } from "@typesafe-ai/sdk";
-import { Deferred, Effect } from "effect";
+import { Effect } from "effect";
 import semanticLintConfig from "../../semantic-lint.config.json";
 import { truncateBytes } from "./routing/choice";
 import type { SemanticLintFileAccess } from "./runtime/files";
 import { deterministicFindings } from "./deterministic";
 import { evaluateSemanticLint } from "./routing/evaluation";
-import type { SemanticLintEvaluation } from "./evaluator";
+import type {
+  SemanticLintEvaluation,
+  SemanticLintEvaluationRequest,
+} from "./evaluator";
 import {
   diffFilesFromEvidence,
   type SemanticLintRepositoryEvidence,
@@ -164,13 +167,19 @@ test("fails when configured rules match no files", async () => {
   expect(error).toMatchObject({ _tag: "RuleFileError" });
 });
 
-test("loads rule globs and strips frontmatter", async () => {
-  const rulePath = "rules/example.md";
+test("discovers custom Markdown rules without registration", async () => {
+  const rulePath = "rules/team/no-debugger.md";
   const files: SemanticLintFileAccess = {
-    findPaths: () => Effect.succeed([rulePath]),
+    findPaths: (pattern) => {
+      expect(pattern).toBe("rules/**/*.md");
+      return Effect.succeed([rulePath]);
+    },
     readText: () =>
       Effect.succeed(
-        ruleSource("# Example rule\n\nCheck TypeScript.", ["src/**/*.ts"]),
+        ruleSource(
+          "# Do not commit debugger statements\n\nRemove debugger statements.",
+          ["src/**/*.ts"],
+        ),
       ),
   };
   const rules = await Effect.runPromise(
@@ -178,8 +187,9 @@ test("loads rule globs and strips frontmatter", async () => {
   );
   expect(rules[0]).toMatchObject({
     rulePath,
-    ruleTitle: "Example rule",
-    definition: "# Example rule\n\nCheck TypeScript.",
+    ruleTitle: "Do not commit debugger statements",
+    definition:
+      "# Do not commit debugger statements\n\nRemove debugger statements.",
     globs: ["src/**/*.ts"],
   });
 });
@@ -449,6 +459,59 @@ test("Choice routing excludes unselected diff content from final judgment", asyn
   });
 });
 
+test("batches rule judgments that share routed evidence", async () => {
+  const definitions: Readonly<Record<string, string>> = {
+    "rules/first.md": ruleSource("# First rule\n\nCheck the first rule."),
+    "rules/second.md": ruleSource("# Second rule\n\nCheck the second rule."),
+  };
+  const files: SemanticLintFileAccess = {
+    findPaths: () => Effect.succeed(Object.keys(definitions)),
+    readText: (path) => Effect.succeed(definitions[path] ?? ""),
+  };
+  const requests: SemanticLintEvaluationRequest[] = [];
+  const delegate = successfulEvaluator();
+  const evaluator: SemanticLintEvaluation = {
+    evaluate(request, options) {
+      requests.push(request);
+      return delegate.evaluate(request, options);
+    },
+  };
+  const outcome = await Effect.runPromise(
+    evaluateSemanticLint(
+      {
+        evidence: repositoryEvidence(["src/item.ts"], {
+          "src/item.ts": "export const item = 1;",
+        }),
+        options: {
+          violationProbabilityThreshold: 0.7,
+          outputFormat: "json",
+          mode: "live",
+        },
+        config,
+      },
+      files,
+      Effect.succeed(evaluator),
+    ),
+  );
+  const finalRequests = requests.filter((request) =>
+    Object.values(request.questions).some((question) =>
+      JSON.stringify(question.instructions).includes(
+        config.questionPrompt.evaluationTask,
+      ),
+    ),
+  );
+  const routedReport = jsonDocuments(outcome)
+    .flatMap((document) => ("findings" in document ? [document] : []))
+    .find((document) => document.source === "<routed-evidence>");
+  expect(finalRequests).toHaveLength(1);
+  expect(Object.keys(finalRequests[0]?.questions ?? {})).toHaveLength(2);
+  expect(routedReport?.findings).toHaveLength(2);
+  expect(routedReport?.usage).toEqual({
+    input_tokens: requests.length,
+    output_tokens: requests.length,
+  });
+});
+
 test("source rules do not route through configuration-only changes", async () => {
   const rulePath = "rules/function-naming.md";
   const files: SemanticLintFileAccess = {
@@ -708,9 +771,18 @@ test("a none Choice stops routing before evidence evaluation", async () => {
 
 test("live evaluation bounds concurrent TypeSafe requests", async () => {
   const definitions: Readonly<Record<string, string>> = {
-    "rules/first.md": ruleSource("# First rule\n\nCheck the first rule."),
-    "rules/second.md": ruleSource("# Second rule\n\nCheck the second rule."),
-    "rules/third.md": ruleSource("# Third rule\n\nCheck the third rule."),
+    "rules/first.md": ruleSource("# First rule\n\nCheck the first rule.", [
+      "src/first.ts",
+      "src/second.ts",
+    ]),
+    "rules/second.md": ruleSource("# Second rule\n\nCheck the second rule.", [
+      "src/second.ts",
+      "src/third.ts",
+    ]),
+    "rules/third.md": ruleSource("# Third rule\n\nCheck the third rule.", [
+      "src/first.ts",
+      "src/third.ts",
+    ]),
   };
   const files: SemanticLintFileAccess = {
     findPaths: () => Effect.succeed(Object.keys(definitions)),
@@ -719,27 +791,17 @@ test("live evaluation bounds concurrent TypeSafe requests", async () => {
   const delegate = successfulEvaluator();
   let activeRequests = 0;
   let maximumActiveRequests = 0;
-  let requestCount = 0;
-  const initialRequestsReleased = Deferred.makeUnsafe<void>();
-  const initialRequestsStarted = Deferred.makeUnsafe<void>();
+  const requestStates: string[] = [];
   const evaluator: SemanticLintEvaluation = {
     evaluate(request, options) {
       return Effect.suspend(() => {
         activeRequests += 1;
-        requestCount += 1;
+        requestStates.push(JSON.stringify(request.state));
         maximumActiveRequests = Math.max(maximumActiveRequests, activeRequests);
-        const signal =
-          requestCount === 2
-            ? Deferred.succeed(initialRequestsStarted, undefined)
-            : Effect.succeed(false);
-        const wait =
-          requestCount <= 2
-            ? Deferred.await(initialRequestsReleased)
-            : Effect.succeed(undefined);
         return Effect.ensuring(
           Effect.andThen(
-            signal,
-            Effect.andThen(wait, delegate.evaluate(request, options)),
+            Effect.sleep("10 millis"),
+            delegate.evaluate(request, options),
           ),
           Effect.sync(() => {
             activeRequests -= 1;
@@ -755,16 +817,17 @@ test("live evaluation bounds concurrent TypeSafe requests", async () => {
       maximumConcurrentRequests: 2,
     },
   };
-  const outcomePromise = Effect.runPromise(
+  await Effect.runPromise(
     evaluateSemanticLint(
       {
         evidence: repositoryEvidence(
-          ["src/first.ts", "src/second.ts"],
+          ["src/first.ts", "src/second.ts", "src/third.ts"],
           {
             "src/first.ts": "export const first = 1;",
             "src/second.ts": "export const second = 2;",
+            "src/third.ts": "export const third = 3;",
           },
-          ["src/first.ts", "src/second.ts"],
+          ["src/first.ts", "src/second.ts", "src/third.ts"],
         ),
         options: {
           violationProbabilityThreshold: 0.7,
@@ -777,10 +840,6 @@ test("live evaluation bounds concurrent TypeSafe requests", async () => {
       Effect.succeed(evaluator),
     ),
   );
-  await Effect.runPromise(Deferred.await(initialRequestsStarted));
-  const observedMaximum = maximumActiveRequests;
-  await Effect.runPromise(Deferred.succeed(initialRequestsReleased, undefined));
-  await outcomePromise;
-  expect(observedMaximum).toBe(2);
+  expect(new Set(requestStates.slice(0, 3)).size).toBe(3);
   expect(maximumActiveRequests).toBe(2);
 });

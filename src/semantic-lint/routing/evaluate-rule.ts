@@ -44,16 +44,26 @@ function usageFromResponse(model: string, usage: Usage): RoutingUsage {
 }
 
 function evidenceState(candidates: readonly SemanticLintEvidence[]): EntryType {
-  return candidates.map((candidate) => ({
-    id: candidate.id ?? null,
-    kind: candidate.kind ?? null,
-    relation: candidate.relation ?? null,
-    path: candidate.path,
-    startLine: candidate.startLine ?? null,
-    endLine: candidate.endLine ?? null,
-    snippet: candidate.snippet ?? null,
-    relevanceProbability: candidate.relevanceProbability ?? null,
-  }));
+  return candidates
+    .toSorted(
+      (left, right) =>
+        (left.id ?? "").localeCompare(right.id ?? "") ||
+        left.path.localeCompare(right.path) ||
+        (left.startLine ?? 0) - (right.startLine ?? 0) ||
+        (left.endLine ?? 0) - (right.endLine ?? 0) ||
+        (left.kind ?? "").localeCompare(right.kind ?? "") ||
+        (left.relation ?? "").localeCompare(right.relation ?? "") ||
+        (left.snippet ?? "").localeCompare(right.snippet ?? ""),
+    )
+    .map((candidate) => ({
+      id: candidate.id ?? null,
+      kind: candidate.kind ?? null,
+      relation: candidate.relation ?? null,
+      path: candidate.path,
+      startLine: candidate.startLine ?? null,
+      endLine: candidate.endLine ?? null,
+      snippet: candidate.snippet ?? null,
+    }));
 }
 
 function relevanceRequest(
@@ -62,12 +72,6 @@ function relevanceRequest(
   context: RoutingRequestContext,
 ): SemanticLintEvaluationRequest {
   const state: EntryType = {
-    rule: {
-      source: rule.rulePath,
-      definition: rule.definition,
-      scope: rule.metadata.scope,
-      requiredEvidence: [...rule.metadata.requiredEvidence],
-    },
     evidenceCandidates: evidenceState(candidates),
   };
   return {
@@ -80,6 +84,12 @@ function relevanceRequest(
             task: "Is this evidence candidate materially relevant to deciding whether the supplied rule is violated?",
             candidateId:
               candidate.id ?? `${candidate.path}:${candidate.startLine ?? 1}`,
+            rule: {
+              source: rule.rulePath,
+              definition: rule.definition,
+              scope: rule.metadata.scope,
+              requiredEvidence: [...rule.metadata.requiredEvidence],
+            },
           },
           {
             true: "The candidate contains facts needed to apply the rule or compare the change with its surrounding contract or convention.",
@@ -233,7 +243,6 @@ function finalRequest(
   context: RoutingRequestContext,
 ): SemanticLintEvaluationRequest {
   const state: EntryType = {
-    candidate: { kind: "routed-rule-evidence", rule: rule.rulePath },
     evidence: evidenceState(evidence),
   };
   return {
