@@ -1,10 +1,7 @@
 import type { Usage } from "@typesafe-ai/sdk";
-import type { SemanticLintFinding } from "./semantic-lint-findings";
+import type { SemanticLintFinding } from "./findings";
 import type { SemanticLintDryRunPlan } from "./routing/route-rules";
-import type {
-  SemanticLintConfiguration,
-  SemanticLintOptions,
-} from "./semantic-lint-config";
+import type { SemanticLintConfiguration, SemanticLintOptions } from "./config";
 
 export type SemanticLintFindingReport = Readonly<{
   source: string;

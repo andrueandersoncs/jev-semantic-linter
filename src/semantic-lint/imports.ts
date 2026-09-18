@@ -1,5 +1,5 @@
 import { dirname, extname, join, posix } from "node:path";
-import type { SemanticLintSource } from "./semantic-lint-evidence";
+import type { SemanticLintSource } from "./evidence";
 
 export const codeExtensions: Readonly<Record<string, true>> = {
   ".ts": true,

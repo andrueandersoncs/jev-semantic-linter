@@ -4,8 +4,8 @@ import type {
   SystemOneRequest,
   SystemOneResult,
 } from "@typesafe-ai/sdk";
-import type { TypeSafeEvaluationError } from "./semantic-lint-errors";
-import type { Result } from "./result";
+import type { TypeSafeEvaluationError } from "./errors";
+import type { Result } from "../result";
 
 export type SemanticLintQuestionSet = Readonly<Record<string, Question>>;
 

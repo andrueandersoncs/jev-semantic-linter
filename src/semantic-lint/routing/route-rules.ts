@@ -1,17 +1,17 @@
 import type { Usage } from "@typesafe-ai/sdk";
-import type { TypeSafeEvaluationError } from "../semantic-lint-errors";
-import type { SemanticLintEvaluation } from "../semantic-lint-evaluator";
-import type { SemanticLintConfiguration } from "../semantic-lint-config";
-import { collect, ok, type Result } from "../result";
+import type { TypeSafeEvaluationError } from "../errors";
+import type { SemanticLintEvaluation } from "../evaluator";
+import type { SemanticLintConfiguration } from "../config";
+import { collect, ok, type Result } from "../../result";
 import { mergeRoutingUsage, type RoutingRequestContext } from "./choice";
 import { repositoryRelations, type RepositoryRelations } from "./context";
 import { routeAndEvaluateRule, type RoutedRuleResult } from "./evaluate-rule";
 import type {
   SemanticLintDiffFile,
   SemanticLintRepositoryEvidence,
-} from "../semantic-lint-evidence";
-import type { SemanticLintFinding } from "../semantic-lint-findings";
-import type { SemanticLintRule } from "../semantic-lint-rules";
+} from "../evidence";
+import type { SemanticLintFinding } from "../findings";
+import type { SemanticLintRule } from "../rules";
 export type SemanticLintDryRunPlan = Readonly<{
   kind: "dry-run-plan";
   layers: readonly [

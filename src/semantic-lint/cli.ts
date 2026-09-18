@@ -1,7 +1,7 @@
-import { lintCommandOutcome } from "./semantic-lint-command";
-import type { SemanticLintServices } from "./semantic-lint-run";
-import type { SemanticLintConfiguration } from "./semantic-lint-config";
-import type { SemanticLintOutcome } from "./semantic-lint-report";
+import { lintCommandOutcome } from "./command";
+import type { SemanticLintServices } from "./run";
+import type { SemanticLintConfiguration } from "./config";
+import type { SemanticLintOutcome } from "./report";
 
 function reportText(
   report: SemanticLintOutcome["report"],

@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { parseTypeSafeResponse } from "./typesafe-response";
+import { parseTypeSafeResponse } from "./response";
 
 test("rejects out-of-range TypeSafe probabilities", () => {
   const result = parseTypeSafeResponse({

@@ -1,18 +1,15 @@
 import type { SemanticLintGitAccess } from "./runtime/git-changes";
-import type { SemanticLintFileAccess } from "./runtime/semantic-lint-files";
-import type { SemanticLintFailure } from "./semantic-lint-errors";
-import { evaluateSemanticLint } from "./routing/semantic-lint-evaluation";
-import type { SemanticLintEvaluation } from "./semantic-lint-evaluator";
+import type { SemanticLintFileAccess } from "./runtime/files";
+import type { SemanticLintFailure } from "./errors";
+import { evaluateSemanticLint } from "./routing/evaluation";
+import type { SemanticLintEvaluation } from "./evaluator";
 import {
   repositoryEvidence,
   type SemanticLintRepositoryEvidence,
-} from "./semantic-lint-evidence";
-import { ok, type Result } from "./result";
-import type {
-  SemanticLintConfiguration,
-  SemanticLintOptions,
-} from "./semantic-lint-config";
-import type { SemanticLintOutcome } from "./semantic-lint-report";
+} from "./evidence";
+import { ok, type Result } from "../result";
+import type { SemanticLintConfiguration, SemanticLintOptions } from "./config";
+import type { SemanticLintOutcome } from "./report";
 
 export type SemanticLintServices = Readonly<{
   git: SemanticLintGitAccess;

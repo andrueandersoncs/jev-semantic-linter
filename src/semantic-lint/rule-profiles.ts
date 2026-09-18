@@ -1,4 +1,4 @@
-import type { SemanticLintRule } from "./semantic-lint-rules";
+import type { SemanticLintRule } from "./rules";
 
 const deterministicChecks: Readonly<Record<string, string>> = {
   "rules/filenames/use-distinct-filenames.md": "distinct-filenames",

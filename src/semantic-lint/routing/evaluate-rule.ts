@@ -1,18 +1,15 @@
 import { noul, type EntryType, type Usage } from "@typesafe-ai/sdk";
-import { noulResponse } from "../runtime/typesafe-response";
-import type { TypeSafeEvaluationError } from "../semantic-lint-errors";
-import {
-  findingFromAnswer,
-  type SemanticLintFinding,
-} from "../semantic-lint-findings";
-import type { SemanticLintEvaluationRequest } from "../semantic-lint-evaluator";
-import { questionsFromRules } from "../semantic-lint-rules";
-import { collect, fail, ok, type Result } from "../result";
+import { noulResponse } from "../runtime/typesafe/response";
+import type { TypeSafeEvaluationError } from "../errors";
+import { findingFromAnswer, type SemanticLintFinding } from "../findings";
+import type { SemanticLintEvaluationRequest } from "../evaluator";
+import { questionsFromRules } from "../rules";
+import { collect, fail, ok, type Result } from "../../result";
 import type {
   SemanticLintEvidence,
   SemanticLintRepositoryEvidence,
-} from "../semantic-lint-evidence";
-import type { SemanticLintRule } from "../semantic-lint-rules";
+} from "../evidence";
+import type { SemanticLintRule } from "../rules";
 import {
   emptyRoutingUsage,
   mergeRoutingUsage,

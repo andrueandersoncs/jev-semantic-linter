@@ -1,7 +1,7 @@
 import type { NoulResponse } from "@typesafe-ai/sdk";
-import type { SemanticLintEvidence } from "./semantic-lint-evidence";
+import type { SemanticLintEvidence } from "./evidence";
 import type { SemanticLintRoutingDecision } from "./routing/choice";
-import type { SemanticLintRule } from "./semantic-lint-rules";
+import type { SemanticLintRule } from "./rules";
 export type SemanticLintFinding = Readonly<{
   rulePath: string;
   ruleTitle: string;

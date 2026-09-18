@@ -1,25 +1,22 @@
-import type { SemanticLintFileAccess } from "../runtime/semantic-lint-files";
-import { deterministicFindings } from "../semantic-lint-deterministic";
-import type { SemanticLintFailure } from "../semantic-lint-errors";
-import type { SemanticLintEvaluation } from "../semantic-lint-evaluator";
-import { ok, type Result } from "../result";
-import type { SemanticLintFinding } from "../semantic-lint-findings";
+import type { SemanticLintFileAccess } from "../runtime/files";
+import { deterministicFindings } from "../deterministic";
+import type { SemanticLintFailure } from "../errors";
+import type { SemanticLintEvaluation } from "../evaluator";
+import { ok, type Result } from "../../result";
+import type { SemanticLintFinding } from "../findings";
 import {
   semanticLintOutcome,
   type SemanticLintFindingReport,
   type SemanticLintOutcome,
-} from "../semantic-lint-report";
+} from "../report";
 import { routeAndEvaluateRules, routingDryRunPlan } from "./route-rules";
 import {
   ruleMatchesPath,
   rulesFromFiles,
   type SemanticLintRule,
-} from "../semantic-lint-rules";
-import type {
-  SemanticLintConfiguration,
-  SemanticLintOptions,
-} from "../semantic-lint-config";
-import type { SemanticLintRepositoryEvidence } from "../semantic-lint-evidence";
+} from "../rules";
+import type { SemanticLintConfiguration, SemanticLintOptions } from "../config";
+import type { SemanticLintRepositoryEvidence } from "../evidence";
 
 type LintInput = Readonly<{
   evidence: SemanticLintRepositoryEvidence;

@@ -1,11 +1,11 @@
 import { Glob } from "bun";
 import { noul } from "@typesafe-ai/sdk";
-import type { SemanticLintFileAccess } from "./runtime/semantic-lint-files";
-import type { SemanticLintFailure } from "./semantic-lint-errors";
-import type { SemanticLintQuestionSet } from "./semantic-lint-evaluator";
-import { metadataForRule } from "./semantic-lint-rule-profiles";
-import { collect, fail, ok, type Result } from "./result";
-import type { SemanticLintConfiguration } from "./semantic-lint-config";
+import type { SemanticLintFileAccess } from "./runtime/files";
+import type { SemanticLintFailure } from "./errors";
+import type { SemanticLintQuestionSet } from "./evaluator";
+import { metadataForRule } from "./rule-profiles";
+import { collect, fail, ok, type Result } from "../result";
+import type { SemanticLintConfiguration } from "./config";
 type SemanticLintRuleDocument = Readonly<{
   definition: string;
   globs: readonly string[];

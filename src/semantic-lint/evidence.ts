@@ -1,8 +1,8 @@
 import { extname } from "node:path";
-import type { SemanticLintFileAccess } from "./runtime/semantic-lint-files";
-import type { FileAccessError } from "./semantic-lint-errors";
-import { ok, type Result } from "./result";
-import type { SemanticLintConfiguration } from "./semantic-lint-config";
+import type { SemanticLintFileAccess } from "./runtime/files";
+import type { FileAccessError } from "./errors";
+import { ok, type Result } from "../result";
+import type { SemanticLintConfiguration } from "./config";
 export type SemanticLintSource = Readonly<{
   path: string;
   language: string;

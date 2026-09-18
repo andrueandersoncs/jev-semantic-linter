@@ -1,16 +1,10 @@
 import { parseArgs } from "node:util";
-import { errorMessage } from "./error-message";
-import type {
-  InvalidArgumentsError,
-  SemanticLintFailure,
-} from "./semantic-lint-errors";
-import { lintRunOutcome, type SemanticLintServices } from "./semantic-lint-run";
-import { fail, ok, type Result } from "./result";
-import type {
-  SemanticLintConfiguration,
-  SemanticLintOptions,
-} from "./semantic-lint-config";
-import type { SemanticLintOutcome } from "./semantic-lint-report";
+import { errorMessage } from "../error-message";
+import type { InvalidArgumentsError, SemanticLintFailure } from "./errors";
+import { lintRunOutcome, type SemanticLintServices } from "./run";
+import { fail, ok, type Result } from "../result";
+import type { SemanticLintConfiguration, SemanticLintOptions } from "./config";
+import type { SemanticLintOutcome } from "./report";
 
 function usageFromConfiguration(config: SemanticLintConfiguration): string {
   return [

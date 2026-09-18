@@ -5,19 +5,16 @@ import {
   type Usage,
 } from "@typesafe-ai/sdk";
 import { basename, extname } from "node:path";
-import type { TypeSafeEvaluationError } from "../semantic-lint-errors";
-import { choiceResponse } from "../runtime/typesafe-response";
-import { collect, fail, ok, type Result } from "../result";
+import type { TypeSafeEvaluationError } from "../errors";
+import { choiceResponse } from "../runtime/typesafe/response";
+import { collect, fail, ok, type Result } from "../../result";
 import type {
   SemanticLintEvaluation,
   SemanticLintEvaluationRequest,
-} from "../semantic-lint-evaluator";
-import type { SemanticLintConfiguration } from "../semantic-lint-config";
-import type {
-  SemanticLintDiffFile,
-  SemanticLintDiffHunk,
-} from "../semantic-lint-evidence";
-import { ruleMatchesPath, type SemanticLintRule } from "../semantic-lint-rules";
+} from "../evaluator";
+import type { SemanticLintConfiguration } from "../config";
+import type { SemanticLintDiffFile, SemanticLintDiffHunk } from "../evidence";
+import { ruleMatchesPath, type SemanticLintRule } from "../rules";
 export type SemanticLintRoutingDecision = Readonly<{
   stage: "domain" | "path" | "hunk" | "relevance";
   candidate: string;

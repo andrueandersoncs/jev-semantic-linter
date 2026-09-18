@@ -4,13 +4,10 @@ import {
   type SemanticLintEvidence,
   type SemanticLintRepositoryEvidence,
   type SemanticLintSource,
-} from "../semantic-lint-evidence";
-import {
-  importSpecifiers,
-  resolvedRelativeImport,
-} from "../semantic-lint-imports";
-import type { SemanticLintConfiguration } from "../semantic-lint-config";
-import type { SemanticLintRule } from "../semantic-lint-rules";
+} from "../evidence";
+import { importSpecifiers, resolvedRelativeImport } from "../imports";
+import type { SemanticLintConfiguration } from "../config";
+import type { SemanticLintRule } from "../rules";
 import { domainForPath, type RoutedHunk, truncateBytes } from "./choice";
 
 type Relation = Readonly<{

@@ -4,20 +4,20 @@ import type {
   NoulResponse,
   ScoreResponse,
 } from "@typesafe-ai/sdk";
-import semanticLintConfig from "../semantic-lint.config.json";
+import semanticLintConfig from "../../semantic-lint.config.json";
 import { truncateBytes } from "./routing/choice";
-import type { SemanticLintFileAccess } from "./runtime/semantic-lint-files";
-import { deterministicFindings } from "./semantic-lint-deterministic";
-import { evaluateSemanticLint } from "./routing/semantic-lint-evaluation";
-import type { SemanticLintEvaluation } from "./semantic-lint-evaluator";
+import type { SemanticLintFileAccess } from "./runtime/files";
+import { deterministicFindings } from "./deterministic";
+import { evaluateSemanticLint } from "./routing/evaluation";
+import type { SemanticLintEvaluation } from "./evaluator";
 import {
   diffFilesFromEvidence,
   type SemanticLintRepositoryEvidence,
-} from "./semantic-lint-evidence";
-import { fail, ok, type Result } from "./result";
-import type { SemanticLintConfiguration } from "./semantic-lint-config";
-import type { SemanticLintOutcome } from "./semantic-lint-report";
-import { rulesFromFiles, type SemanticLintRule } from "./semantic-lint-rules";
+} from "./evidence";
+import { fail, ok, type Result } from "../result";
+import type { SemanticLintConfiguration } from "./config";
+import type { SemanticLintOutcome } from "./report";
+import { rulesFromFiles, type SemanticLintRule } from "./rules";
 
 const config = semanticLintConfig as SemanticLintConfiguration;
 

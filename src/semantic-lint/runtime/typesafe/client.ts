@@ -1,10 +1,9 @@
 import { TypeSafeClient } from "@typesafe-ai/sdk";
-import { errorMessage } from "../error-message";
-import type { TypeSafeEvaluationError } from "../semantic-lint-errors";
-import type { SemanticLintEvaluation } from "../semantic-lint-evaluator";
-import { fail, ok, type Result } from "../result";
-import { parseTypeSafeResponse } from "./typesafe-response";
-
+import { errorMessage } from "../../../error-message";
+import type { TypeSafeEvaluationError } from "../../errors";
+import type { SemanticLintEvaluation } from "../../evaluator";
+import { fail, ok, type Result } from "../../../result";
+import { parseTypeSafeResponse } from "./response";
 /** Creates one TypeSafe client for one live lint run. */
 export function createSemanticLintEvaluator(): Result<
   SemanticLintEvaluation,

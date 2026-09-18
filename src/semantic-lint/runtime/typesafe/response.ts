@@ -3,9 +3,9 @@ import type {
   NoulResponse,
   ScoreResponse,
 } from "@typesafe-ai/sdk";
-import type { TypeSafeEvaluationError } from "../semantic-lint-errors";
-import type { SemanticLintEvaluationResponse } from "../semantic-lint-evaluator";
-import { fail, ok, type Result } from "../result";
+import type { TypeSafeEvaluationError } from "../../errors";
+import type { SemanticLintEvaluationResponse } from "../../evaluator";
+import { fail, ok, type Result } from "../../../result";
 
 type Schema<T> = Readonly<{
   accepts(value: unknown): value is T;

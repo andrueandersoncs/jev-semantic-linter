@@ -3,13 +3,13 @@ import {
   codeExtensions,
   importSpecifiers,
   resolvedRelativeImport,
-} from "./semantic-lint-imports";
+} from "./imports";
 import type {
   SemanticLintEvidence,
   SemanticLintRepositoryEvidence,
-} from "./semantic-lint-evidence";
-import type { SemanticLintFinding } from "./semantic-lint-findings";
-import type { SemanticLintRule } from "./semantic-lint-rules";
+} from "./evidence";
+import type { SemanticLintFinding } from "./findings";
+import type { SemanticLintRule } from "./rules";
 
 type PackageJson = Readonly<{
   name?: string;

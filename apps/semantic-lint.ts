@@ -1,10 +1,10 @@
 import semanticLintConfig from "../semantic-lint.config.json";
-import { gitChanges } from "../src/runtime/git-changes";
-import { semanticLintFiles } from "../src/runtime/semantic-lint-files";
-import { createSemanticLintEvaluator } from "../src/runtime/typesafe-evaluator";
-import { writeLintCommandOutput } from "../src/semantic-lint-cli";
-import type { SemanticLintServices } from "../src/semantic-lint-run";
-import type { SemanticLintConfiguration } from "../src/semantic-lint-config";
+import { gitChanges } from "../src/semantic-lint/runtime/git-changes";
+import { semanticLintFiles } from "../src/semantic-lint/runtime/files";
+import { createSemanticLintEvaluator } from "../src/semantic-lint/runtime/typesafe/client";
+import { writeLintCommandOutput } from "../src/semantic-lint/cli";
+import type { SemanticLintServices } from "../src/semantic-lint/run";
+import type { SemanticLintConfiguration } from "../src/semantic-lint/config";
 
 const services: SemanticLintServices = {
   git: gitChanges,

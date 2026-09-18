@@ -1,7 +1,7 @@
 import { $ } from "bun";
-import { errorMessage } from "../error-message";
-import type { GitAccessError } from "../semantic-lint-errors";
-import { fail, ok, type Result } from "../result";
+import { errorMessage } from "../../error-message";
+import type { GitAccessError } from "../errors";
+import { fail, ok, type Result } from "../../result";
 
 type GitEvidenceKind =
   | "tracked changes"

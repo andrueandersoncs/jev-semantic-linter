@@ -1,7 +1,7 @@
 import { Glob } from "bun";
-import { errorMessage } from "../error-message";
-import type { FileAccessError } from "../semantic-lint-errors";
-import { fail, ok, type Result } from "../result";
+import { errorMessage } from "../../error-message";
+import type { FileAccessError } from "../errors";
+import { fail, ok, type Result } from "../../result";
 
 export type SemanticLintFileAccess = Readonly<{
   readText: (filePath: string) => Promise<Result<string, FileAccessError>>;
