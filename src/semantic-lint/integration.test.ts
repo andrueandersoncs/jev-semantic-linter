@@ -5,7 +5,7 @@ import type {
   ScoreResponse,
 } from "@typesafe-ai/sdk";
 import { Effect } from "effect";
-import semanticLintConfig from "../../semantic-lint.config.json";
+import { semanticLintConfig, type SemanticLintConfiguration } from "./config";
 import { truncateBytes } from "./routing/choice";
 import type { SemanticLintFileAccess } from "./runtime/files";
 import { deterministicFindings } from "./deterministic";
@@ -19,11 +19,10 @@ import {
   type SemanticLintRepositoryEvidence,
 } from "./evidence";
 import { TypeSafeEvaluationError } from "./errors";
-import type { SemanticLintConfiguration } from "./config";
 import type { SemanticLintOutcome } from "./report";
 import { rulesFromFiles, type SemanticLintRule } from "./rules";
 
-const config = semanticLintConfig as SemanticLintConfiguration;
+const config = semanticLintConfig;
 
 function ruleSource(
   definition: string,
@@ -182,9 +181,7 @@ test("discovers custom Markdown rules without registration", async () => {
         ),
       ),
   };
-  const rules = await Effect.runPromise(
-    rulesFromFiles(files, config.ruleFiles),
-  );
+  const rules = await Effect.runPromise(rulesFromFiles(files));
   expect(rules[0]).toMatchObject({
     rulePath,
     ruleTitle: "Do not commit debugger statements",
@@ -200,9 +197,7 @@ test("rejects rule files without glob frontmatter", async () => {
     findPaths: () => Effect.succeed([rulePath]),
     readText: () => Effect.succeed("# Example rule\n\nCheck TypeScript."),
   };
-  const error = await Effect.runPromise(
-    Effect.flip(rulesFromFiles(files, config.ruleFiles)),
-  );
+  const error = await Effect.runPromise(Effect.flip(rulesFromFiles(files)));
   expect(error).toMatchObject({
     _tag: "RuleFileError",
     path: rulePath,
@@ -496,7 +491,7 @@ test("batches rule judgments that share routed evidence", async () => {
   const finalRequests = requests.filter((request) =>
     Object.values(request.questions).some((question) =>
       JSON.stringify(question.instructions).includes(
-        config.questionPrompt.evaluationTask,
+        "Does the identified candidate violate the supplied semantic lint rule?",
       ),
     ),
   );

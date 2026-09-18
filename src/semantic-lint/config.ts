@@ -1,10 +1,3 @@
-type ArgumentDefaults = Readonly<{
-  runtimeArgumentStartIndex: number;
-  helpFlag: string;
-  defaultOutputFormat: "text" | "json";
-  defaultMode: "live" | "dry-run";
-}>;
-
 type ProbabilityThresholds = Readonly<{
   defaultViolationProbabilityThreshold: number;
   maximumPassProbability: number;
@@ -12,14 +5,7 @@ type ProbabilityThresholds = Readonly<{
   maximumViolationProbability: number;
 }>;
 
-type RuleFileConfiguration = Readonly<{
-  ruleFilePattern: string;
-  firstRuleOrdinal: number;
-  ruleIdPrefix: string;
-}>;
-
 type EvidenceConfiguration = Readonly<{
-  sourceFileExtensions: readonly string[];
   repositoryFileExtensions: readonly string[];
   sourceChunkLineCount: number;
   sourceChunkOverlapLineCount: number;
@@ -36,26 +22,6 @@ export type RoutingConfiguration = Readonly<{
   maximumEvidenceSnippetBytes: number;
 }>;
 
-type OutputConfiguration = Readonly<{
-  jsonIndentSpaces: number;
-  unknownLanguageName: string;
-  sourceFileLabel: string;
-  noChangedFiles: string;
-}>;
-
-type QuestionPrompt = Readonly<{
-  evaluationTask: string;
-  evaluationGuidance: string;
-  violationCriterion: string;
-  complianceCriterion: string;
-}>;
-
-type ProcessExitCodes = Readonly<{
-  success: number;
-  findingsFound: number;
-  runtimeError: number;
-}>;
-
 export type SemanticLintOptions = Readonly<{
   violationProbabilityThreshold: number;
   modelName?: string;
@@ -65,12 +31,43 @@ export type SemanticLintOptions = Readonly<{
 }>;
 
 export type SemanticLintConfiguration = Readonly<{
-  argumentDefaults: ArgumentDefaults;
   probabilityThresholds: ProbabilityThresholds;
-  ruleFiles: RuleFileConfiguration;
   evidence: EvidenceConfiguration;
   routing: RoutingConfiguration;
-  outputFormat: OutputConfiguration;
-  questionPrompt: QuestionPrompt;
-  processExitCodes: ProcessExitCodes;
 }>;
+
+export const semanticLintConfig: SemanticLintConfiguration = {
+  probabilityThresholds: {
+    defaultViolationProbabilityThreshold: 0.7,
+    maximumPassProbability: 0.4,
+    minimumViolationProbabilityExclusive: 0.5,
+    maximumViolationProbability: 1,
+  },
+  evidence: {
+    repositoryFileExtensions: [
+      ".ts",
+      ".tsx",
+      ".js",
+      ".jsx",
+      ".mjs",
+      ".cjs",
+      ".json",
+      ".toml",
+      ".yaml",
+      ".yml",
+      ".md",
+    ],
+    sourceChunkLineCount: 80,
+    sourceChunkOverlapLineCount: 20,
+    maximumEvaluationRequestBytes: 32000,
+  },
+  routing: {
+    maximumChoiceOptions: 16,
+    beamWidth: 3,
+    maximumConcurrentRequests: 800,
+    maximumExpandedCandidates: 12,
+    maximumSelectedEvidence: 6,
+    minimumRelevanceProbability: 0.45,
+    maximumEvidenceSnippetBytes: 6000,
+  },
+};

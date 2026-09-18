@@ -102,7 +102,7 @@ Each rule result has one classification:
 | `violation` | Violation probability reaches the configured threshold | Yes |
 | `insufficient_evidence` | Required evidence was not supplied | Yes |
 
-With the default configuration:
+With the default thresholds:
 
 - `<= 0.4`: `pass`
 - `> 0.4` and `< 0.7`: `review`
@@ -134,7 +134,7 @@ bun run semantic-lint --json --threshold 0.8
 Dry-run output contains:
 
 - local deterministic and evidence-sufficiency results;
-- the configured routing layers and limits;
+- routing layers and limits;
 - every semantic rule scheduled for routing;
 - stable changed-file and hunk IDs.
 
@@ -143,22 +143,14 @@ their construction instead of fabricating downstream requests.
 
 Dry runs always exit successfully.
 
-## Configuration
+## Evaluation policy
 
-[`semantic-lint.config.json`](semantic-lint.config.json) defines:
+Routing limits, evidence bounds, prompts, output formatting, and exit codes are
+part of the tool. They are compiled into the CLI instead of exposed as project
+configuration. Users control the violation threshold, model, and review context
+through command-line options.
 
-- probability thresholds;
-- source and repository extensions;
-- source chunk size and overlap;
-- the maximum serialized TypeSafe request size;
-- the maximum concurrent TypeSafe requests;
-- Choice option count and beam width;
-- expansion, relevance, and final-evidence limits;
-- rule discovery;
-- prompt criteria;
-- output and exit codes.
-
-Every generated request is checked against the configured byte limit. Oversized
+Every generated request is checked against an internal byte limit. Oversized
 candidate sets are split or routed through another Choice layer. If no bounded,
 relevant evidence remains, the rule returns `insufficient_evidence` instead of
 a false pass or API error.
@@ -166,7 +158,7 @@ a false pass or API error.
 Independent judgments with the same model, request options, and byte-identical
 state are sent as questions in one TypeSafe request. The scheduler splits
 batches at the byte limit, maps each answer back to its rule, and enforces the
-configured concurrent-request limit.
+concurrent-request limit.
 
 ## Exit codes
 
@@ -187,9 +179,8 @@ direction, runtime boundaries, owners, decisions, and exception process.
 rules/                                  Natural-language rules
 apps/semantic-lint.ts                    Deployable CLI entry
 scripts/check-architecture.ts           Deterministic architecture gate
-semantic-lint.config.json               Runtime policy
 src/runtime/                            Git, filesystem, and TypeSafe boundaries
-src/semantic-lint-config.ts             CLI and routing configuration contracts
+src/semantic-lint/config.ts             Internal evaluation policy
 src/semantic-lint-rule-profiles.ts      Rule evaluator and scope metadata
 src/semantic-lint-deterministic.ts      Exact repository checks
 src/semantic-lint-evidence.ts           Diff parsing and evidence collection

@@ -67,10 +67,10 @@ export function lintRunOutcome(
     (evidence) =>
       evidence === undefined
         ? Effect.succeed({
-            processExitCode: config.processExitCodes.success,
+            processExitCode: 0,
             report: {
               format: "text",
-              text: config.outputFormat.noChangedFiles,
+              text: "No changed files to lint.",
             },
           })
         : evaluateSemanticLint(

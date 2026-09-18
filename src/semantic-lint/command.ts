@@ -6,7 +6,7 @@ import { lintRunOutcome, type SemanticLintServices } from "./run";
 import type { SemanticLintConfiguration, SemanticLintOptions } from "./config";
 import type { SemanticLintOutcome } from "./report";
 
-function usageFromConfiguration(config: SemanticLintConfiguration): string {
+function usageText(config: SemanticLintConfiguration): string {
   return [
     "Usage: bun run apps/semantic-lint.ts [options]",
     "",
@@ -73,14 +73,8 @@ function optionsFromArguments(
             violationProbabilityThreshold,
             modelName: values.model,
             reviewContextPath: values["review-context"],
-            outputFormat:
-              values.json === true
-                ? "json"
-                : config.argumentDefaults.defaultOutputFormat,
-            mode:
-              values["dry-run"] === true
-                ? "dry-run"
-                : config.argumentDefaults.defaultMode,
+            outputFormat: values.json === true ? "json" : "text",
+            mode: values["dry-run"] === true ? "dry-run" : "live",
           })
         : Effect.fail(new InvalidArgumentsError({ message: thresholdError }));
     },
@@ -93,12 +87,12 @@ export function lintCommandOutcome(
   config: SemanticLintConfiguration,
   services: SemanticLintServices,
 ): Effect.Effect<SemanticLintOutcome, SemanticLintFailure> {
-  if (args.includes(config.argumentDefaults.helpFlag)) {
+  if (args.includes("--help")) {
     return Effect.succeed({
-      processExitCode: config.processExitCodes.success,
+      processExitCode: 0,
       report: {
         format: "text",
-        text: usageFromConfiguration(config),
+        text: usageText(config),
       },
     });
   }

@@ -4,10 +4,7 @@ import type { SemanticLintServices } from "./run";
 import type { SemanticLintConfiguration } from "./config";
 import type { SemanticLintOutcome } from "./report";
 
-function reportText(
-  report: SemanticLintOutcome["report"],
-  jsonIndentSpaces: number,
-): string {
+function reportText(report: SemanticLintOutcome["report"]): string {
   if (report.format === "text") {
     return report.text;
   }
@@ -17,7 +14,7 @@ function reportText(
   return JSON.stringify(
     report.documents,
     null,
-    containsRequests ? undefined : jsonIndentSpaces,
+    containsRequests ? undefined : 2,
   );
 }
 
@@ -29,15 +26,10 @@ export function writeLintCommandOutput(
 ): Effect.Effect<number> {
   return Effect.matchEffect(lintCommandOutcome(args, config, services), {
     onFailure: (error) =>
-      Effect.map(
-        Console.error(`semantic-lint: ${error.message}`),
-        () => config.processExitCodes.runtimeError,
-      ),
+      Effect.map(Console.error(`semantic-lint: ${error.message}`), () => 2),
     onSuccess: (outcome) =>
       Effect.map(
-        Console.log(
-          reportText(outcome.report, config.outputFormat.jsonIndentSpaces),
-        ),
+        Console.log(reportText(outcome.report)),
         () => outcome.processExitCode,
       ),
   });

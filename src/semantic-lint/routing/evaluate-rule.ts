@@ -247,7 +247,7 @@ function finalRequest(
   };
   return {
     state,
-    questions: questionsFromRules([rule], context.config.questionPrompt),
+    questions: questionsFromRules([rule]),
     ...(context.modelName === undefined ? {} : { model: context.modelName }),
   };
 }

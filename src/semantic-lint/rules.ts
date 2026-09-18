@@ -5,11 +5,14 @@ import type { SemanticLintFileAccess } from "./runtime/files";
 import { RuleFileError, type SemanticLintFailure } from "./errors";
 import type { SemanticLintQuestionSet } from "./evaluator";
 import { metadataForRule } from "./rule-profiles";
-import type { SemanticLintConfiguration } from "./config";
 type SemanticLintRuleDocument = Readonly<{
   definition: string;
   globs: readonly string[];
 }>;
+
+const ruleFilePattern = "rules/**/*.md";
+const firstRuleOrdinal = 1;
+const ruleIdPrefix = "rule_";
 
 const compiledRuleGlobs = new WeakMap<
   SemanticLintRule,
@@ -101,14 +104,13 @@ function ruleFromDefinition(
   rulePath: string,
   index: number,
   source: string,
-  config: SemanticLintConfiguration["ruleFiles"],
 ): Effect.Effect<SemanticLintRule, RuleFileError> {
   return Effect.map(ruleDocumentFromSource(rulePath, source), (document) => {
     const heading = document.definition.match(/^#\s+(.+)$/m)?.[1];
     const ruleTitle = heading?.trim() ?? rulePath;
-    const ruleOrdinal = index + config.firstRuleOrdinal;
+    const ruleOrdinal = index + firstRuleOrdinal;
     return {
-      ruleId: `${config.ruleIdPrefix}${ruleOrdinal}`,
+      ruleId: `${ruleIdPrefix}${ruleOrdinal}`,
       rulePath,
       ruleTitle,
       definition: document.definition,
@@ -122,30 +124,28 @@ function ruleFromFile(
   files: SemanticLintFileAccess,
   rulePath: string,
   index: number,
-  config: SemanticLintConfiguration["ruleFiles"],
 ): Effect.Effect<SemanticLintRule, SemanticLintFailure> {
   return Effect.flatMap(files.readText(rulePath), (source) =>
-    ruleFromDefinition(rulePath, index, source.trim(), config),
+    ruleFromDefinition(rulePath, index, source.trim()),
   );
 }
 
-/** Loads configured rule files in stable path order. */
+/** Loads Markdown rules in stable path order. */
 export function rulesFromFiles(
   files: SemanticLintFileAccess,
-  config: SemanticLintConfiguration["ruleFiles"],
 ): Effect.Effect<readonly SemanticLintRule[], SemanticLintFailure> {
-  return Effect.flatMap(files.findPaths(config.ruleFilePattern), (found) => {
+  return Effect.flatMap(files.findPaths(ruleFilePattern), (found) => {
     if (found.length === 0) {
       return Effect.fail(
         new RuleFileError({
-          path: config.ruleFilePattern,
-          message: `No rule files match ${config.ruleFilePattern}`,
+          path: ruleFilePattern,
+          message: `No rule files match ${ruleFilePattern}`,
         }),
       );
     }
     return Effect.forEach(
       found,
-      (rulePath, index) => ruleFromFile(files, rulePath, index, config),
+      (rulePath, index) => ruleFromFile(files, rulePath, index),
       { concurrency: "unbounded" },
     );
   });
@@ -153,25 +153,26 @@ export function rulesFromFiles(
 
 export function questionsFromRules(
   rules: readonly SemanticLintRule[],
-  config: SemanticLintConfiguration["questionPrompt"],
 ): SemanticLintQuestionSet {
   return Object.fromEntries(
     rules.map((rule) => [
       rule.ruleId,
       noul(
         {
-          task: config.evaluationTask,
+          task: "Does the identified candidate violate the supplied semantic lint rule?",
           rule: {
             source: rule.rulePath,
             definition: rule.definition,
             scope: rule.metadata.scope,
             requiredEvidence: [...rule.metadata.requiredEvidence],
           },
-          guidance: config.evaluationGuidance,
+          guidance:
+            "Judge only the identified candidate. Use the supplied repository and change evidence when the rule requires comparison. The caller handles applicability and evidence sufficiency before asking this question.",
         },
         {
-          true: config.violationCriterion,
-          false: config.complianceCriterion,
+          true: "The candidate contains a concrete violation supported by the supplied evidence.",
+          false:
+            "The supplied evidence shows no concrete violation in the candidate.",
         },
       ),
     ]),

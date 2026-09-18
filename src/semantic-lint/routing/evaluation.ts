@@ -83,7 +83,7 @@ export function evaluateSemanticLint(
   createEvaluator: Effect.Effect<SemanticLintEvaluation, SemanticLintFailure>,
 ): Effect.Effect<SemanticLintOutcome, SemanticLintFailure> {
   return Effect.gen(function* () {
-    const loadedRules = yield* rulesFromFiles(files, input.config.ruleFiles);
+    const loadedRules = yield* rulesFromFiles(files);
     const applicableRules = loadedRules.filter((rule) =>
       input.evidence.changedPaths.some((path) => ruleMatchesPath(rule, path)),
     );
@@ -95,15 +95,10 @@ export function evaluateSemanticLint(
         : [...groups.semantic, ...groups.review];
     if (input.options.mode === "dry-run") {
       const plan = routingDryRunPlan(routed, input.evidence, input.config);
-      return semanticLintOutcome(reports, plan, input.options, input.config);
+      return semanticLintOutcome(reports, plan, input.options);
     }
     if (routed.length === 0) {
-      return semanticLintOutcome(
-        reports,
-        undefined,
-        input.options,
-        input.config,
-      );
+      return semanticLintOutcome(reports, undefined, input.options);
     }
     const evaluator = yield* createEvaluator;
     const result = yield* routeAndEvaluateRules({
@@ -128,7 +123,6 @@ export function evaluateSemanticLint(
       [...reports, routedReport],
       undefined,
       input.options,
-      input.config,
     );
   });
 }

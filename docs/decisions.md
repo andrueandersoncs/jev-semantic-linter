@@ -15,14 +15,14 @@ Revisit when a second deployable or independently consumed library exists.
 
 The API rejects requests above a fixed byte budget, while repository and change
 rules need more than one source file. The routing pipeline narrows domain, path,
-hunk, related source, and relevance before final evaluation. Configuration caps
+hunk, related source, and relevance before final evaluation. The runtime caps
 each request at 32,000 bytes, each evidence snippet at 6,000 bytes, and each
 final evaluation at six evidence items.
 
 The previous CLI sent every complete changed source through every rule and had
 no request-size bound. The routing stages bound request growth. A scheduler
 groups pending judgments by model, request options, and byte-identical state,
-then sends their questions together up to the configured byte limit. A shared
+then sends their questions together up to the request byte limit. A shared
 semaphore bounds physical requests. Each answer returns to its originating rule,
 and distributed usage values sum to the service response totals.
 
@@ -65,3 +65,11 @@ runtime validation without adding a general schema dependency.
 Built-in and user-defined rules use the same Markdown format under `rules/`.
 The CLI discovers them recursively. A rule needs YAML path globs and a Markdown
 definition; no registration file or executable plugin API is required.
+
+## ADR 7: Compile evaluation policy into the CLI
+
+**Status:** accepted
+
+Request limits, routing bounds, prompts, formatting, and exit codes are tool
+implementation details. Keep them in source rather than distributing a project
+configuration file. User controls remain CLI options.

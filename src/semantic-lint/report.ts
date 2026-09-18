@@ -1,7 +1,7 @@
 import type { Usage } from "@typesafe-ai/sdk";
 import type { SemanticLintFinding } from "./findings";
 import type { SemanticLintDryRunPlan } from "./routing/route-rules";
-import type { SemanticLintConfiguration, SemanticLintOptions } from "./config";
+import type { SemanticLintOptions } from "./config";
 
 export type SemanticLintFindingReport = Readonly<{
   source: string;
@@ -26,10 +26,6 @@ export type SemanticLintOutcome = Readonly<{
 }>;
 
 type ReportOptions = Pick<SemanticLintOptions, "mode" | "outputFormat">;
-type ReportConfiguration = Pick<
-  SemanticLintConfiguration,
-  "outputFormat" | "processExitCodes"
->;
 
 const classifications: readonly SemanticLintFinding["classification"][] = [
   "violation",
@@ -82,12 +78,9 @@ function findingLines(finding: SemanticLintFinding): readonly string[] {
   ];
 }
 
-function humanReport(
-  report: SemanticLintFindingReport,
-  sourceFileLabel: string,
-): string {
+function humanReport(report: SemanticLintFindingReport): string {
   const header = [
-    `${sourceFileLabel}: ${report.source}`,
+    `Source file: ${report.source}`,
     classificationSummary(report.findings),
   ];
   const actionable = report.findings.filter(
@@ -119,13 +112,9 @@ export function semanticLintOutcome(
   reports: readonly SemanticLintFindingReport[],
   dryRunPlan: SemanticLintDryRunPlan | undefined,
   options: ReportOptions,
-  config: ReportConfiguration,
 ): SemanticLintOutcome {
   const isLive = options.mode === "live";
-  const processExitCode =
-    isLive && hasActionableFindings(reports)
-      ? config.processExitCodes.findingsFound
-      : config.processExitCodes.success;
+  const processExitCode = isLive && hasActionableFindings(reports) ? 1 : 0;
   if (options.outputFormat === "json" || options.mode === "dry-run") {
     const documents =
       dryRunPlan === undefined ? reports : [...reports, dryRunPlan];
@@ -138,11 +127,7 @@ export function semanticLintOutcome(
     processExitCode,
     report: {
       format: "text",
-      text: reports
-        .map((report) =>
-          humanReport(report, config.outputFormat.sourceFileLabel),
-        )
-        .join("\n\n"),
+      text: reports.map(humanReport).join("\n\n"),
     },
   };
 }
