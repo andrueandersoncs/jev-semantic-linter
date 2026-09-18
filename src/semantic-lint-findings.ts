@@ -1,35 +1,59 @@
 import type { NoulResponse } from "@typesafe-ai/sdk";
-import {
-  type Result,
-  valuesFromResults,
-} from "./semantic-lint-result";
-import type { Finding, Rule } from "./semantic-lint-types";
+import type { SemanticLintEvidence } from "./semantic-lint-evidence";
+import type { SemanticLintRoutingDecision } from "./routing/choice";
+import type { SemanticLintRule } from "./semantic-lint-rules";
+export type SemanticLintFinding = Readonly<{
+  rulePath: string;
+  ruleTitle: string;
+  evaluator: SemanticLintRule["metadata"]["evaluator"];
+  classification:
+    | "violation"
+    | "review"
+    | "pass"
+    | "not_applicable"
+    | "insufficient_evidence";
+  message: string;
+  violationProbability?: number;
+  evidence: readonly SemanticLintEvidence[];
+  routing?: Readonly<{
+    decisions: readonly SemanticLintRoutingDecision[];
+    selectedEvidenceIds: readonly string[];
+  }>;
+}>;
 
+function classificationFromProbability(
+  probability: number,
+  violationProbabilityThreshold: number,
+  maximumPassProbability: number,
+): SemanticLintFinding["classification"] {
+  if (probability >= violationProbabilityThreshold) {
+    return "violation";
+  }
+  return probability <= maximumPassProbability ? "pass" : "review";
+}
 
-export function findingsFromAnswers(
-  rules: readonly Rule[],
-  answers: Readonly<Record<string, NoulResponse>>,
-  threshold: number,
-  passMaximum: number,
-): Result<readonly Finding[]> {
-  const findingResults = rules.map((rule): Result<Finding> => {
-    const answer = answers[rule.id];
-    if (!answer) {
-      return {
-        ok: false,
-        error: `TypeSafe returned no answer for ${rule.id}`,
-      };
-    }
-    const status: Finding["status"] =
-      answer.noul >= threshold
-        ? "violation"
-        : answer.noul <= passMaximum
-          ? "pass"
-          : "review";
-    return {
-      ok: true,
-      value: { ...rule, probability: answer.noul, status },
-    };
-  });
-  return valuesFromResults(findingResults);
+export function findingFromAnswer(
+  rule: SemanticLintRule,
+  answer: NoulResponse,
+  evidence: readonly SemanticLintEvidence[],
+  violationProbabilityThreshold: number,
+  maximumPassProbability: number,
+): SemanticLintFinding {
+  const classification = classificationFromProbability(
+    answer.noul,
+    violationProbabilityThreshold,
+    maximumPassProbability,
+  );
+  return {
+    rulePath: rule.rulePath,
+    ruleTitle: rule.ruleTitle,
+    evaluator: "semantic",
+    classification,
+    message:
+      classification === "pass"
+        ? "No concrete violation was found in this candidate."
+        : "The candidate needs review against this rule.",
+    violationProbability: answer.noul,
+    evidence: classification === "pass" ? [] : evidence,
+  };
 }

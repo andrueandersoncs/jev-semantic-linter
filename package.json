@@ -1,19 +1,25 @@
 {
   "name": "jev-playground",
-  "module": "src/index.ts",
+  "module": "apps/semantic-lint.ts",
   "type": "module",
   "private": true,
+  "packageManager": "bun@1.4.2",
   "scripts": {
-    "lint": "bun run semantic-lint",
-    "semantic-lint": "bun run src/index.ts"
+    "format": "biome format --write .",
+    "format:check": "biome format .",
+    "lint": "biome lint .",
+    "typecheck": "tsc --noEmit",
+    "test": "bun test",
+    "check:architecture": "bun run scripts/check-architecture.ts",
+    "check": "bun run format:check && bun run lint && bun run typecheck && bun run test && bun run check:architecture",
+    "semantic-lint": "bun run apps/semantic-lint.ts"
   },
   "devDependencies": {
-    "@types/bun": "latest"
-  },
-  "peerDependencies": {
-    "typescript": "^7"
+    "@biomejs/biome": "2.5.11",
+    "@types/bun": "1.4.2",
+    "typescript": "7.0.2"
   },
   "dependencies": {
-    "@typesafe-ai/sdk": "^0.6.0"
+    "@typesafe-ai/sdk": "0.6.0"
   }
 }

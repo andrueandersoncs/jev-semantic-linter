@@ -1,1 +1,0 @@
-always organize your code for readability. this means putting similar code entities together, simplifying things, and eliminating all duplication.

@@ -1,55 +1,88 @@
-import { changedFilePaths } from "./changed-file-paths";
-import { lintOutcomes } from "./semantic-lint-evaluation";
-import type { Result } from "./semantic-lint-result";
+import type { SemanticLintGitAccess } from "./runtime/git-changes";
+import type { SemanticLintFileAccess } from "./runtime/semantic-lint-files";
+import type { SemanticLintFailure } from "./semantic-lint-errors";
+import { evaluateSemanticLint } from "./routing/semantic-lint-evaluation";
+import type { SemanticLintEvaluation } from "./semantic-lint-evaluator";
+import {
+  repositoryEvidence,
+  type SemanticLintRepositoryEvidence,
+} from "./semantic-lint-evidence";
+import { ok, type Result } from "./result";
 import type {
-  Configuration,
-  LintOutcome,
-  Options,
-} from "./semantic-lint-types";
+  SemanticLintConfiguration,
+  SemanticLintOptions,
+} from "./semantic-lint-config";
+import type { SemanticLintOutcome } from "./semantic-lint-report";
 
+export type SemanticLintServices = Readonly<{
+  git: SemanticLintGitAccess;
+  files: SemanticLintFileAccess;
+  createEvaluator: () => Result<SemanticLintEvaluation, SemanticLintFailure>;
+}>;
+
+async function evidenceForRun(
+  options: SemanticLintOptions,
+  config: SemanticLintConfiguration,
+  services: SemanticLintServices,
+): Promise<
+  Result<SemanticLintRepositoryEvidence | undefined, SemanticLintFailure>
+> {
+  const snapshot = await services.git.repositorySnapshot();
+  if (!snapshot.ok) {
+    return snapshot;
+  }
+  if (snapshot.value.changedPaths.length === 0) {
+    return ok(undefined);
+  }
+  const baseEvidence = await repositoryEvidence(
+    {
+      repositoryPaths: snapshot.value.repositoryPaths,
+      changedPaths: snapshot.value.changedPaths,
+      diff: snapshot.value.diff,
+      config: config.evidence,
+    },
+    services.files,
+  );
+  if (!baseEvidence.ok || options.reviewContextPath === undefined) {
+    return baseEvidence;
+  }
+  const reviewContext = await services.files.readText(
+    options.reviewContextPath,
+  );
+  return reviewContext.ok
+    ? ok({
+        ...baseEvidence.value,
+        reviewContext: {
+          path: options.reviewContextPath,
+          language: "text",
+          source: reviewContext.value,
+        },
+      })
+    : reviewContext;
+}
+
+/**
+ * Loads one Git snapshot, optionally attaches review context, and evaluates it.
+ * No-change runs succeed without creating a TypeSafe client.
+ */
 export async function lintRunOutcome(
-  options: Options,
-  config: Configuration,
-): Promise<Result<LintOutcome>> {
-  const sourcePaths = await changedFilePaths();
-  if (!sourcePaths.ok) {
-    return sourcePaths;
+  options: SemanticLintOptions,
+  config: SemanticLintConfiguration,
+  services: SemanticLintServices,
+): Promise<Result<SemanticLintOutcome, SemanticLintFailure>> {
+  const evidence = await evidenceForRun(options, config, services);
+  if (!evidence.ok) {
+    return evidence;
   }
-
-  const outcomes = await lintOutcomes(
-    sourcePaths.value,
-    options,
-    config,
+  if (evidence.value === undefined) {
+    return ok({
+      processExitCode: config.processExitCodes.success,
+      report: { format: "text", text: config.outputFormat.noChangedFiles },
+    });
+  }
+  return evaluateSemanticLint(
+    { evidence: evidence.value, options, config },
+    services.files,
+    services.createEvaluator,
   );
-  if (!outcomes.ok) {
-    return outcomes;
-  }
-
-  const hasFindings = outcomes.value.some(
-    (outcome) => outcome.exitCode === config.exitCodes.findings,
-  );
-  const exitCode = hasFindings
-    ? config.exitCodes.findings
-    : config.exitCodes.success;
-  if (outcomes.value.length === config.rules.emptyLength) {
-    return {
-      ok: true,
-      value: { exitCode, output: config.output.noChangedFiles },
-    };
-  }
-  if (options.json || options.dryRun) {
-    const reports = outcomes.value.map(
-      (outcome): unknown => JSON.parse(outcome.output),
-    );
-    const output = JSON.stringify(
-      reports,
-      null,
-      config.output.jsonIndentSpaces,
-    );
-    return { ok: true, value: { exitCode, output } };
-  }
-  const output = outcomes.value
-    .map((outcome) => outcome.output)
-    .join("\n\n");
-  return { ok: true, value: { exitCode, output } };
 }

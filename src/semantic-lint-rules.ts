@@ -1,91 +1,108 @@
-import { Glob } from "bun";
 import { noul } from "@typesafe-ai/sdk";
-import { errorMessage } from "./error-message";
-import {
-  type Result,
-  valuesFromResults,
-} from "./semantic-lint-result";
-import { textFromFile } from "./text-from-file";
-import type {
-  Configuration,
-  QuestionSet,
-  Rule,
-} from "./semantic-lint-types";
+import type { SemanticLintFileAccess } from "./runtime/semantic-lint-files";
+import type { SemanticLintFailure } from "./semantic-lint-errors";
+import type { SemanticLintQuestionSet } from "./semantic-lint-evaluator";
+import { metadataForRule } from "./semantic-lint-rule-profiles";
+import { collect, fail, ok, type Result } from "./result";
+import type { SemanticLintConfiguration } from "./semantic-lint-config";
+export type SemanticLintRule = Readonly<{
+  ruleId: string;
+  rulePath: string;
+  ruleTitle: string;
+  definition: string;
+  metadata: Readonly<{
+    evaluator: "semantic" | "deterministic" | "review";
+    scope: "source" | "change" | "repository";
+    requiredEvidence: readonly string[];
+    deterministicCheck?: string;
+  }>;
+}>;
 
-async function rulePaths(pattern: string): Promise<Result<readonly string[]>> {
-  try {
-    const glob = new Glob(pattern);
-    const scannedPaths = glob.scan(".");
-    const paths = await Array.fromAsync(scannedPaths);
-    const sortedPaths = paths.toSorted();
-    return { ok: true, value: sortedPaths };
-  } catch (error) {
-    const message = errorMessage(error);
-    return {
-      ok: false,
-      error: `Could not discover rule files: ${message}`,
-    };
+function ruleFromDefinition(
+  rulePath: string,
+  index: number,
+  definition: string,
+  config: SemanticLintConfiguration["ruleFiles"],
+): Result<SemanticLintRule, SemanticLintFailure> {
+  if (definition.length === 0) {
+    return fail({
+      tag: "RuleFileError",
+      path: rulePath,
+      message: `Rule file is empty: ${rulePath}`,
+    });
   }
+  const heading = definition.match(/^#\s+(.+)$/m)?.[1];
+  const ruleTitle = heading?.trim() ?? rulePath;
+  const ruleOrdinal = index + config.firstRuleOrdinal;
+  return ok({
+    ruleId: `${config.ruleIdPrefix}${ruleOrdinal}`,
+    rulePath,
+    ruleTitle,
+    definition,
+    metadata: metadataForRule(rulePath),
+  });
 }
 
+async function ruleFromFile(
+  files: SemanticLintFileAccess,
+  rulePath: string,
+  index: number,
+  config: SemanticLintConfiguration["ruleFiles"],
+): Promise<Result<SemanticLintRule, SemanticLintFailure>> {
+  const source = await files.readText(rulePath);
+  return source.ok
+    ? ruleFromDefinition(rulePath, index, source.value.trim(), config)
+    : source;
+}
+
+/** Loads configured rule files in stable path order. */
 export async function rulesFromFiles(
-  config: Configuration["rules"],
-): Promise<Result<readonly Rule[]>> {
-  const paths = await rulePaths(config.pattern);
-  if (!paths.ok) {
-    return paths;
+  files: SemanticLintFileAccess,
+  config: SemanticLintConfiguration["ruleFiles"],
+): Promise<Result<readonly SemanticLintRule[], SemanticLintFailure>> {
+  const found = await files.findPaths(config.ruleFilePattern);
+  if (!found.ok) {
+    return found;
   }
-  if (paths.value.length === config.emptyLength) {
-    return { ok: false, error: `No rule files match ${config.pattern}` };
+  if (found.value.length === 0) {
+    return fail({
+      tag: "RuleFileError",
+      path: config.ruleFilePattern,
+      message: `No rule files match ${config.ruleFilePattern}`,
+    });
   }
-
-  const rulePromises = paths.value.map(
-    async (path, index): Promise<Result<Rule>> => {
-      const contents = await textFromFile(path, config.fileLabel);
-      if (!contents.ok) {
-        return contents;
-      }
-
-      const text = contents.value.trim();
-      if (text.length === config.emptyLength) {
-        return { ok: false, error: `Rule file is empty: ${path}` };
-      }
-
-      const headingMatch = text.match(/^#\s+(.+)$/m);
-      const [, heading] = headingMatch ?? [];
-      const trimmedHeading = heading?.trim();
-      const title = trimmedHeading ?? path;
-      const ordinal = index + config.firstOrdinal;
-      const id = `${config.idPrefix}${ordinal}`;
-      return {
-        ok: true,
-        value: { id, path, title, text },
-      };
-    },
+  return collect(
+    await Promise.all(
+      found.value.map((rulePath, index) =>
+        ruleFromFile(files, rulePath, index, config),
+      ),
+    ),
   );
-  const loaded = await Promise.all(rulePromises);
-  return valuesFromResults(loaded);
 }
 
 export function questionsFromRules(
-  rules: readonly Rule[],
-  config: Configuration["question"],
-): QuestionSet {
-  const entries = rules.map((rule) => {
-    const instructions = {
-      task: config.task,
-      rule: {
-        source: rule.path,
-        definition: rule.text,
-      },
-      guidance: config.guidance,
-    };
-    const criteria = {
-      true: config.violation,
-      false: config.compliance,
-    };
-    const question = noul(instructions, criteria);
-    return [rule.id, question] as const;
-  });
-  return Object.fromEntries(entries);
+  rules: readonly SemanticLintRule[],
+  config: SemanticLintConfiguration["questionPrompt"],
+): SemanticLintQuestionSet {
+  return Object.fromEntries(
+    rules.map((rule) => [
+      rule.ruleId,
+      noul(
+        {
+          task: config.evaluationTask,
+          rule: {
+            source: rule.rulePath,
+            definition: rule.definition,
+            scope: rule.metadata.scope,
+            requiredEvidence: [...rule.metadata.requiredEvidence],
+          },
+          guidance: config.evaluationGuidance,
+        },
+        {
+          true: config.violationCriterion,
+          false: config.complianceCriterion,
+        },
+      ),
+    ]),
+  );
 }

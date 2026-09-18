@@ -1,226 +1,163 @@
 # Semantic lint playground
 
-An experimental CLI that applies natural-language engineering rules to every
-changed file in the current Git worktree. Each rule becomes a
-[TypeSafe Noul](https://docs.typesafe.ai/primitives/noul), and all rules for one
-file are evaluated together in a single TypeSafe System One request.
+A CLI that checks natural-language engineering rules against the current Git
+change and repository.
 
-The model returns the probability that each rule is violated. The CLI turns
-those probabilities into `pass`, `review`, or `violation` results and an exit
-code suitable for local checks or CI.
+It uses three evaluators:
 
-## How it works
-
-For each run, the CLI:
-
-1. Finds tracked changes relative to `HEAD` and untracked, non-ignored files.
-2. Loads every Markdown rule matching `rules/**/*.md`.
-3. Reads each changed file in full and builds one Noul question per rule.
-4. Sends one TypeSafe request per changed file, processing files sequentially.
-5. Prints every rule result, including passes, and fails if any result needs
-   review or is a violation.
-
-The CLI does not filter by extension. Any changed file selected by Git is read
-as text and evaluated.
-
-## Requirements
-
-- [Bun](https://bun.sh/)
-- Git, with the project inside a repository that has a `HEAD` commit
-- A [TypeSafe API key](https://docs.typesafe.ai/sdk/javascript) for lint and
-  dry-run commands
+- deterministic code for dependency, workspace, filename, Bun, test, and
+  TypeScript configuration rules;
+- layered TypeSafe Choice routing over evidence domains, paths, and diff hunks;
+- independent TypeSafe Noul relevance and rule judgments;
+- explicit review context for rules that require requirements, rationale, or
+  measurements.
 
 ## Setup
 
-Install dependencies:
-
 ```bash
 bun install
-```
-
-Export your TypeSafe API key:
-
-```bash
 export TYPESAFE_API_KEY="..."
 ```
 
-Bun also loads a project-root `.env` file automatically:
-
-```dotenv
-TYPESAFE_API_KEY=...
-```
-
-`.env` is ignored by this repository and must not be committed.
+The API key is needed for live semantic evaluation. Dry runs do not call the
+API.
 
 ## Run
-
-Run from the project root:
 
 ```bash
 bun run semantic-lint
 ```
 
-`bun run lint` is an alias for the same command.
+The CLI:
 
-### File selection
+1. parses changed, untracked, and deleted files into stable diff hunks;
+2. loads `rules/**/*.md` and assigns each rule an evaluator and scope;
+3. runs exact repository checks in code;
+4. uses Choice probability distributions to retain a beam of likely domains,
+   paths, and hunks;
+5. expands selected hunks through imports, importers, tests, manifests, and
+   configuration;
+6. uses independent Nouls to remove irrelevant evidence;
+7. evaluates each rule once against bounded selected evidence.
 
-The selected paths are the sorted, deduplicated union of:
+No semantic judgment receives the complete Git diff or repository. Large
+candidate sets are routed through bounded buckets.
+
+## Review context
+
+Some rules cannot be verified from source and Git alone. Without external
+context, they return `insufficient_evidence`.
+
+Supply requirements, design rationale, or measurements with:
 
 ```bash
-git diff --name-only --diff-filter=ACMR -z HEAD --
-git ls-files --others --exclude-standard -z
+bun run semantic-lint --review-context review-context.txt
 ```
 
-This includes staged changes, unstaged changes, renames, and untracked files.
-Deleted and ignored files are excluded. There is no positional argument for
-linting a specific path.
+The context is evaluated only by rules whose profiles require external
+requirements, rationale, or measurements.
 
-If no paths are selected, the CLI prints:
+## Results
 
-```text
-No changed files to lint.
-```
+Each rule result has one classification:
 
-and exits successfully.
-
-## Rules
-
-Each non-empty Markdown file under `rules/` defines one rule. Discovery is
-recursive, so rules can be grouped into directories such as `rules/security/`.
-
-```markdown
-# Do not log secrets
-
-Authentication tokens, passwords, API keys, and other secrets must not be
-written to application logs.
-```
-
-The first level-one heading becomes the result title. If a rule has no
-level-one heading, its path is used instead. The complete Markdown document is
-sent as the rule definition, so it can contain rationale, exceptions, and
-examples.
-
-Rule paths are sorted lexicographically before IDs such as `rule_1` are
-assigned. Because adding or renaming a rule can change these IDs, integrations
-should identify rules by their `path`, not their generated `id`.
-
-## Classification policy
-
-With the defaults in `semantic-lint.config.json`, a Noul probability is
-classified as follows:
-
-| Probability | Status | Exit status |
+| Classification | Meaning | Fails a live run |
 | --- | --- | --- |
-| `<= 0.4` | `pass` | Does not fail the run |
-| `> 0.4` and `< 0.7` | `review` | Fails the run |
-| `>= 0.7` | `violation` | Fails the run |
+| `pass` | Supplied evidence shows no violation | No |
+| `not_applicable` | No matching candidate exists | No |
+| `review` | Violation probability is above the pass boundary | Yes |
+| `violation` | Violation probability reaches the configured threshold | Yes |
+| `insufficient_evidence` | Required evidence was not supplied | Yes |
 
-`--threshold` changes the violation boundary only; the pass maximum remains
-`0.4`. A threshold must be greater than `0.5` and no greater than `1`.
+With the default configuration:
 
-These thresholds are project policy, not universal measures of model quality.
-Evaluate them against representative code and consequences before relying on
-the linter as a required gate.
+- `<= 0.4`: `pass`
+- `> 0.4` and `< 0.7`: `review`
+- `>= 0.7`: `violation`
+
+Deterministic findings do not have a probability. Semantic findings include
+selected source spans and their relevance probabilities. JSON output also
+includes every routing decision and the final evidence IDs.
 
 ## Options
 
 ```text
---threshold <number>  Violation probability threshold (default: 0.7)
---model <name>        TypeSafe model override (default: SDK default)
---json                Print machine-readable results
---dry-run             Print the TypeSafe request without sending it
---help                Show help
+--threshold <number>     Violation probability threshold
+--model <name>           TypeSafe model override
+--review-context <path>  Requirements, rationale, and measurements
+--json                   Print machine-readable results
+--dry-run                Print the evaluation plan without API calls
+--help                   Show help
 ```
 
 Examples:
 
 ```bash
-# Inspect the exact batched requests without calling the API
 bun run semantic-lint --dry-run
-
-# Select a model explicitly
 bun run semantic-lint --model jev-latest
-
-# Emit JSON and move the violation boundary to 0.8
 bun run semantic-lint --json --threshold 0.8
 ```
 
-Dry-run output is a JSON array containing one request per selected file. It
-makes no API request and always exits successfully after request construction.
-The current implementation still constructs `TypeSafeClient`, so
-`TYPESAFE_API_KEY` is required for dry runs.
+Dry-run output contains:
 
-Without `--model`, the TypeSafe SDK chooses its configured default model. With
-the installed SDK, that is `jev-latest` unless `TYPESAFE_DEFAULT_MODEL`
-overrides it.
+- local deterministic and evidence-sufficiency results;
+- the configured routing layers and limits;
+- every semantic rule scheduled for routing;
+- stable changed-file and hunk IDs.
 
-## Output
+Later requests depend on earlier Choice distributions, so dry runs describe
+their construction instead of fabricating downstream requests.
 
-Default output contains the source path followed by one line for every rule:
+Dry runs always exit successfully.
 
-```text
-Source file: src/example.ts
-[pass 0.08] Do not log secrets (rules/security/do-not-log-secrets.md)
-[review 0.52] Return errors as values (rules/errors-as-values.md)
-```
+## Configuration
 
-`--json` emits an array of per-file reports. Each report contains:
+[`semantic-lint.config.json`](semantic-lint.config.json) defines:
 
-- `source`
-- the model returned by TypeSafe
-- the active violation `threshold`
-- every rule with its definition, probability, and status
-- token `usage` returned by TypeSafe
+- probability thresholds;
+- source and repository extensions;
+- source chunk size and overlap;
+- the maximum serialized TypeSafe request size;
+- Choice option count and beam width;
+- expansion, relevance, and final-evidence limits;
+- rule discovery;
+- prompt criteria;
+- output and exit codes.
 
-When there are no changed files, the plain `No changed files to lint.` message
-is used even with `--json` or `--dry-run`.
+Every generated request is checked against the configured byte limit. Oversized
+candidate sets are split or routed through another Choice layer. If no bounded,
+relevant evidence remains, the rule returns `insufficient_evidence` instead of
+a false pass or API error.
 
 ## Exit codes
 
 | Code | Meaning |
 | --- | --- |
-| `0` | All rules passed, no files changed, help shown, or dry run completed |
-| `1` | At least one rule was classified as `review` or `violation` |
-| `2` | A handled CLI, Git, file, rule, response, or API error occurred |
+| `0` | Passed, no changes, help, or dry run |
+| `1` | Violation, review, or insufficient evidence |
+| `2` | Handled CLI, Git, file, response, or API error |
 
-Human-readable errors are written to standard error with a `semantic-lint:`
-prefix.
+## Architecture and ownership
 
-## Configuration
-
-[`semantic-lint.config.json`](semantic-lint.config.json) contains the runtime
-policy and presentation values:
-
-- default violation threshold and pass maximum
-- rule glob and generated ID format
-- Noul task, guidance, and true/false criteria
-- output labels and indentation
-- success, findings, and runtime-error exit codes
-
-The CLI has no separate configuration discovery mechanism; it imports this
-project-root file directly.
-
-## Operational constraints
-
-- The entire contents of every selected file are sent to TypeSafe during a live
-  run. Do not lint changed files that contain credentials or other data that
-  must not leave the machine.
-- Git-ignored untracked files are excluded, but changed tracked files are not
-  protected by `.gitignore`.
-- Results identify the source file and rule, not a line or source span.
-- The CLI reports findings but does not modify files or suggest fixes.
-- Rules are batched by file: one request contains every rule for one file, and
-  separate files produce separate sequential requests.
+[`ARCHITECTURE.md`](ARCHITECTURE.md) defines the public contract, dependency
+direction, runtime boundaries, owners, decisions, and exception process.
 
 ## Project layout
 
 ```text
-rules/                         Natural-language lint rules
-semantic-lint.config.json      Policy, prompt, output, and exit-code settings
-src/changed-file-paths.ts      Git-based file discovery
-src/semantic-lint-rules.ts     Rule loading and Noul construction
-src/semantic-lint-evaluation.ts
-                               Request construction and TypeSafe evaluation
-src/semantic-lint-report.ts    Human-readable and JSON reports
-src/semantic-lint-cli.ts       Argument handling and process behavior
+rules/                                  Natural-language rules
+apps/semantic-lint.ts                    Deployable CLI entry
+scripts/check-architecture.ts           Deterministic architecture gate
+semantic-lint.config.json               Runtime policy
+src/runtime/                            Git, filesystem, and TypeSafe boundaries
+src/semantic-lint-config.ts             CLI and routing configuration contracts
+src/semantic-lint-rule-profiles.ts      Rule evaluator and scope metadata
+src/semantic-lint-deterministic.ts      Exact repository checks
+src/semantic-lint-evidence.ts           Diff parsing and evidence collection
+src/routing/                            Layered evidence routing
+src/routing/semantic-lint-evaluation.ts Rule partitioning and evaluation
+src/semantic-lint-report.ts             User-facing reports
+src/semantic-lint-run.ts                Git-to-evaluation orchestration
+src/semantic-lint-command.ts            Argument parsing and command dispatch
+src/semantic-lint-cli.ts                Console boundary
 ```

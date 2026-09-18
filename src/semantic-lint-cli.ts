@@ -1,38 +1,40 @@
-import semanticLintConfig from "../semantic-lint.config.json";
-import { lintRunOutcome } from "./semantic-lint-run";
-import { optionsFromArguments } from "./semantic-lint-options";
-import type { Configuration } from "./semantic-lint-types";
+import { lintCommandOutcome } from "./semantic-lint-command";
+import type { SemanticLintServices } from "./semantic-lint-run";
+import type { SemanticLintConfiguration } from "./semantic-lint-config";
+import type { SemanticLintOutcome } from "./semantic-lint-report";
 
-export async function processExitCode(): Promise<number> {
-  const config: Configuration = semanticLintConfig;
-  const options = optionsFromArguments(
-    Bun.argv.slice(config.arguments.runtimeStartIndex),
-    config,
+function reportText(
+  report: SemanticLintOutcome["report"],
+  jsonIndentSpaces: number,
+): string {
+  if (report.format === "text") {
+    return report.text;
+  }
+  const containsRequests = report.documents.some(
+    (document) => "kind" in document && document.kind === "dry-run-plan",
   );
-  if (!options.ok) {
-    console.error(`semantic-lint: ${options.error}`);
-    return config.exitCodes.runtimeError;
-  }
-  if (!options.value) {
-    const usage = [
-      "Usage: bun run src/index.ts [options]",
-      "",
-      "Options:",
-      `  --threshold <number>  Violation probability threshold (default: ${config.thresholds.defaultViolation})`,
-      "  --model <name>        TypeSafe model override (default: SDK default)",
-      "  --json                Print machine-readable results",
-      "  --dry-run             Print the TypeSafe request without sending it",
-      "  --help                Show this help",
-    ].join("\n");
-    console.log(usage);
-    return config.exitCodes.success;
-  }
+  return JSON.stringify(
+    report.documents,
+    null,
+    containsRequests ? undefined : jsonIndentSpaces,
+  );
+}
 
-  const result = await lintRunOutcome(options.value, config);
+/** Writes one interpreted command result at the console boundary. */
+export async function writeLintCommandOutput(
+  args: readonly string[],
+  config: SemanticLintConfiguration,
+  services: SemanticLintServices,
+): Promise<number> {
+  const result = await lintCommandOutcome(args, config, services);
   if (!result.ok) {
-    console.error(`semantic-lint: ${result.error}`);
-    return config.exitCodes.runtimeError;
+    console.error(`semantic-lint: ${result.error.message}`);
+    return config.processExitCodes.runtimeError;
   }
-  console.log(result.value.output);
-  return result.value.exitCode;
+  const text = reportText(
+    result.value.report,
+    config.outputFormat.jsonIndentSpaces,
+  );
+  console.log(text);
+  return result.value.processExitCode;
 }

@@ -1,37 +1,151 @@
+import type { Usage } from "@typesafe-ai/sdk";
+import type { SemanticLintFinding } from "./semantic-lint-findings";
+import type { SemanticLintDryRunPlan } from "./routing/route-rules";
 import type {
-  Configuration,
-  EvaluationResponse,
-  Finding,
-  Options,
-} from "./semantic-lint-types";
+  SemanticLintConfiguration,
+  SemanticLintOptions,
+} from "./semantic-lint-config";
 
-export function lintFindingReport(
-  sourcePath: string,
-  findings: readonly Finding[],
-  response: EvaluationResponse,
-  options: Options,
-  config: Configuration,
+export type SemanticLintFindingReport = Readonly<{
+  source: string;
+  model: string;
+  violationProbabilityThreshold: number;
+  findings: readonly SemanticLintFinding[];
+  usage?: Usage;
+}>;
+
+type SemanticLintJsonDocument =
+  | SemanticLintFindingReport
+  | SemanticLintDryRunPlan;
+
+export type SemanticLintOutcome = Readonly<{
+  processExitCode: number;
+  report:
+    | Readonly<{ format: "text"; text: string }>
+    | Readonly<{
+        format: "json";
+        documents: readonly SemanticLintJsonDocument[];
+      }>;
+}>;
+
+type ReportOptions = Pick<SemanticLintOptions, "mode" | "outputFormat">;
+type ReportConfiguration = Pick<
+  SemanticLintConfiguration,
+  "outputFormat" | "processExitCodes"
+>;
+
+const classifications: readonly SemanticLintFinding["classification"][] = [
+  "violation",
+  "review",
+  "pass",
+  "not_applicable",
+  "insufficient_evidence",
+];
+
+function classificationSummary(
+  findings: readonly SemanticLintFinding[],
 ): string {
-  if (options.json) {
-    return JSON.stringify(
-      {
-        source: sourcePath,
-        model: response.model,
-        threshold: options.threshold,
-        findings,
-        usage: response.usage,
-      },
-      null,
-      config.output.jsonIndentSpaces,
-    );
-  }
+  return classifications
+    .map((classification) => {
+      const count = findings.filter(
+        (finding) => finding.classification === classification,
+      ).length;
+      return `${classification}=${count}`;
+    })
+    .join(" ");
+}
 
-  const findingLines = findings.map(
-    (finding) =>
-      `[${finding.status} ${finding.probability}] ${finding.title} (${finding.path})`,
-  );
+function locationLine(item: SemanticLintFinding["evidence"][number]): string {
+  const lineRange =
+    item.startLine === undefined
+      ? ""
+      : `:${item.startLine}-${item.endLine ?? item.startLine}`;
+  const relevance =
+    item.relevanceProbability === undefined
+      ? ""
+      : ` relevance=${item.relevanceProbability.toFixed(2)}`;
+  return `  at ${item.path}${lineRange}${relevance}`;
+}
+
+function findingLines(finding: SemanticLintFinding): readonly string[] {
+  const probability =
+    finding.violationProbability === undefined
+      ? ""
+      : ` ${finding.violationProbability}`;
+  const selectedEvidence = finding.routing?.selectedEvidenceIds ?? [];
+  const routingLine =
+    selectedEvidence.length === 0
+      ? []
+      : [`  routed evidence ${selectedEvidence.join(", ")}`];
   return [
-    `${config.output.sourceFileLabel}: ${sourcePath}`,
-    ...findingLines,
-  ].join("\n");
+    `[${finding.classification}${probability}] ${finding.ruleTitle} (${finding.rulePath})`,
+    `  ${finding.message}`,
+    ...routingLine,
+    ...finding.evidence.map(locationLine),
+  ];
+}
+
+function humanReport(
+  report: SemanticLintFindingReport,
+  sourceFileLabel: string,
+): string {
+  const header = [
+    `${sourceFileLabel}: ${report.source}`,
+    classificationSummary(report.findings),
+  ];
+  const actionable = report.findings.filter(
+    (finding) =>
+      finding.classification !== "pass" &&
+      finding.classification !== "not_applicable",
+  );
+  if (actionable.length === 0) {
+    return [...header, "No findings."].join("\n");
+  }
+  return [...header, ...actionable.flatMap(findingLines)].join("\n");
+}
+
+function hasActionableFindings(
+  reports: readonly SemanticLintFindingReport[],
+): boolean {
+  return reports.some((report) =>
+    report.findings.some(
+      (finding) =>
+        finding.classification === "violation" ||
+        finding.classification === "review" ||
+        finding.classification === "insufficient_evidence",
+    ),
+  );
+}
+
+/** Renders all findings from one repository evaluation into one CLI outcome. */
+export function semanticLintOutcome(
+  reports: readonly SemanticLintFindingReport[],
+  dryRunPlan: SemanticLintDryRunPlan | undefined,
+  options: ReportOptions,
+  config: ReportConfiguration,
+): SemanticLintOutcome {
+  const isLive = options.mode === "live";
+  const processExitCode =
+    isLive && hasActionableFindings(reports)
+      ? config.processExitCodes.findingsFound
+      : config.processExitCodes.success;
+  if (options.outputFormat === "json" || options.mode === "dry-run") {
+    const documents =
+      dryRunPlan === undefined ? reports : [...reports, dryRunPlan];
+    return {
+      processExitCode,
+      report: { format: "json", documents },
+    };
+  }
+  return {
+    processExitCode,
+    report: {
+      format: "text",
+      text: reports
+        .map((report) =>
+          humanReport(report, config.outputFormat.sourceFileLabel),
+        )
+        .join("\n\n"),
+    },
+  };
 }
